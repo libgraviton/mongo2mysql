@@ -1,0 +1,23 @@
+{
+    "name": "graviton/mongo2mysql",
+    "description": "Script that transport MongoDB collections to MySQL/MariaDB tables",
+    "type": "project",
+    "require": {
+        "symfony/console": "^4.1",
+        "mongodb/mongodb": "=1.3.2",
+        "opis/database": "^4.0",
+        "symfony/filesystem": "^4.1",
+        "monolog/monolog": "^1.23",
+        "symfony/monolog-bridge": "^4.1"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {"Graviton\\Mongo2Mysql\\": "src/"}
+    },
+    "authors": [
+        {
+            "name": "List of contributors",
+            "homepage": "https://github.com/libgraviton/mongo2mysql/graphs/contributors"
+        }
+    ]
+}
