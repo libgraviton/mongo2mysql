@@ -41,6 +41,9 @@ class MariaImporter {
      */
     private $fs;
 
+    private $insertStack = [];
+    private $insertBulkSize = 200;
+
     public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword)
     {
         $this->logger = $logger;
@@ -62,13 +65,12 @@ class MariaImporter {
             $this->mysqlUser,
             $this->mysqlPassword,
             [
-                \PDO::MYSQL_ATTR_LOCAL_INFILE => true,
                 \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION
             ]
         );
 
         try {
-            $this->logger->info('Creating MySQL table', ['name' => $dumpResult->getEntityName()]);
+            $this->logger->info('Creating target PDO table', ['name' => $dumpResult->getEntityName()]);
             $this->createTableSchema($dumpResult);
             $this->importData($dumpResult);
         } catch (\Exception $e) {
@@ -82,22 +84,32 @@ class MariaImporter {
     private function createTableSchema(DumpResult $dumpResult)
     {
         $connection = Connection::fromPDO($this->pdo);
+        $database = new Database($connection);
 
         // drop if exists
-        $dropStatement = 'DROP TABLE IF EXISTS `'.$dumpResult->getEntityName().'`';
-        $this->logger->info('Dropping table if exists', ['tableName' => $dumpResult->getEntityName()]);
-        $this->pdo->query($dropStatement);
+        $this->logger->info('Dropping target table', ['tableName' => $dumpResult->getEntityName()]);
 
-        $database = new Database($connection);
+        try {
+            $database->schema()->drop($dumpResult->getEntityName());
+        } catch (\Exception $e) {
+            $this->logger->warn(
+                'Could not drop table, maybe it does not exist',
+                ['tableName' => $dumpResult->getEntityName()]
+            );
+        }
 
         $database->schema()->create($dumpResult->getEntityName(), function (CreateTable $creater) use ($dumpResult) {
             $fieldTypes = $dumpResult->getFieldTypes();
-            $totalLength = 0;
 
             foreach ($dumpResult->getFields() as $fieldName) {
                 if (isset($fieldTypes[$fieldName])) {
                     $type = $fieldTypes[$fieldName];
                 } else {
+                    $type = DumpResult::FIELDTYPE_STRING;
+                }
+
+                // workaround for *Id named fields -> make them strings
+                if (substr($fieldName, -2) == 'Id') {
                     $type = DumpResult::FIELDTYPE_STRING;
                 }
 
@@ -107,15 +119,12 @@ class MariaImporter {
                         break;
                     case DumpResult::FIELDTYPE_BOOL:
                         $creater->boolean($fieldName);
-                        $totalLength += 4;
                         break;
                     case DumpResult::FIELDTYPE_INT:
                         $creater->integer($fieldName);
-                        $totalLength += 20;
                         break;
                     case DumpResult::FIELDTYPE_DATETIME:
                         $creater->dateTime($fieldName);
-                        $totalLength += 12;
                         break;
                 }
             }
@@ -137,16 +146,77 @@ class MariaImporter {
 
     private function importData(DumpResult $dumpResult)
     {
-        $query = 'LOAD DATA LOCAL INFILE ';
-        $query .= $this->pdo->quote($dumpResult->getDumpFile(), \PDO::PARAM_STMT);
-        $query .= ' INTO TABLE `'.$dumpResult->getEntityName().'` ';
-        $query .= ' CHARACTER SET utf8 ';
-        $query .= ' FIELDS TERMINATED BY \',\' ';
-        $query .= ' ENCLOSED BY \'"\' ';
-        $query .= ' LINES TERMINATED BY \'\n\' ';
 
-        $this->logger->info('Starting import query', ['query' => $query]);
+        $fp = fopen($dumpResult->getDumpFile(), 'r+');
+        $fieldNames = $dumpResult->getFields();
+        $insertCounter = 0;
 
-        $this->pdo->query($query);
+        $this->logger->info('Starting to execute INSERT queries...');
+
+        while (($data = fgetcsv($fp)) !== false) {
+            $row = array_combine(
+                $fieldNames,
+                $data
+            );
+
+            $row = array_map(function ($val) {
+                if ($val == 'NULL') {
+                    return null;
+                }
+                return $val;
+            }, $row);
+
+            $this->insertRecord($dumpResult, $row);
+
+
+            /*
+            try {
+                $database->insert($row)->into($dumpResult->getEntityName());
+                $insertCounter++;
+            } catch (\Exception $e) {
+                $this->logger->warn('Insert Error', [$e]);
+            }
+
+            if (($insertCounter % 1000) === 0) {
+                $this->logger->info('SQL row insert report', ['currentCount' => $insertCounter]);
+            }
+            */
+        }
+
+        fclose($fp);
+
+        $this->logger->info('Finished PDO import', ['totalCount' => $insertCounter]);
+    }
+
+    private function insertRecord(DumpResult $dumpResult, $record)
+    {
+        $this->insertStack[] = $record;
+
+        if (count($this->insertStack) >= $this->insertBulkSize) {
+            $this->flushBulk($dumpResult);
+        }
+    }
+
+    private function flushBulk(DumpResult $dumpResult)
+    {
+        if (empty($this->insertStack)) {
+            return;
+        }
+
+        $sql = 'INSERT INTO '.$this->pdo->quote($dumpResult->getEntityName()).' ';
+        $sql .= '(';
+
+        // build query - must be same all db's
+        $fieldList = $dumpResult->getFields();
+        $sql .= implode(', ', $fieldList);
+
+        $sql .= ') VALUES ';
+
+        $els = array_map(function($record) {
+            return '('.impl
+        }, $this->insertStack);
+
+
+        $this->insertStack = [];
     }
 }
