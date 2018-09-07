@@ -183,6 +183,14 @@ class MongoDumper {
             }
         }
 
+        // correct lengths for numbers
+		$maxSize = 9;
+        foreach ($this->fieldLengths as $name => $length) {
+        	if ($length > $maxSize && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_INT) {
+        		$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+			}
+		}
+
         $this->logger->info('Collected field count', ['count' => count($this->fields)]);
 
         // check for long fieldnames and drop them
@@ -298,6 +306,9 @@ class MongoDumper {
                 } else {
                     $propertyName = $namePrefix.'_'.$prop;
                 }
+
+                // clean dollar sign
+				$propertyName = str_replace('$', '_', $propertyName);
 
                 $flatRecord[$propertyName] = $value;
             }

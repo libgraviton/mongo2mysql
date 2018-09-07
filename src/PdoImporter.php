@@ -1,6 +1,7 @@
 <?php
 namespace Graviton\Mongo2Mysql;
 
+use Graviton\Mongo2Mysql\Db\CompilerGetter;
 use Graviton\Mongo2Mysql\Model\DumpResult;
 use Monolog\Logger;
 use Opis\Database\Connection;
@@ -13,7 +14,7 @@ use Symfony\Component\Filesystem\Filesystem;
  * @license  https://opensource.org/licenses/MIT MIT License
  * @link     http://swisscom.ch
  */
-class MariaImporter {
+class PdoImporter {
 
     /**
      * @var Logger
@@ -36,21 +37,29 @@ class MariaImporter {
      */
     private $pdo;
 
+	/**
+	 * @var Connection
+	 */
+    private $connection;
+
+    private $compiler;
+
     /**
      * @var Filesystem
      */
     private $fs;
 
     private $insertStack = [];
-    private $insertBulkSize = 200;
+    private $insertBulkSize;
 
-    public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword)
+    public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword, $insertBulkSize)
     {
         $this->logger = $logger;
         $this->dsn = $dsn;
         $this->mysqlUser = $mysqlUser;
         $this->mysqlPassword = $mysqlPassword;
         $this->fs = new Filesystem();
+        $this->insertBulkSize = (int) $insertBulkSize;
     }
 
     /**
@@ -69,6 +78,9 @@ class MariaImporter {
             ]
         );
 
+        $this->connection = Connection::fromPDO($this->pdo);
+        $this->compiler = CompilerGetter::getInstance($this->connection);
+
         try {
             $this->logger->info('Creating target PDO table', ['name' => $dumpResult->getEntityName()]);
             $this->createTableSchema($dumpResult);
@@ -83,8 +95,7 @@ class MariaImporter {
 
     private function createTableSchema(DumpResult $dumpResult)
     {
-        $connection = Connection::fromPDO($this->pdo);
-        $database = new Database($connection);
+        $database = new Database($this->connection);
 
         // drop if exists
         $this->logger->info('Dropping target table', ['tableName' => $dumpResult->getEntityName()]);
@@ -130,12 +141,17 @@ class MariaImporter {
             }
 
             // has index?
+			$primarySet = false;
             if (in_array('_id', $dumpResult->getFields())) {
                 $creater->string('_id');
                 $creater->primary('_id');
-            } elseif (in_array('id', $dumpResult->getFields())) {
+                $primarySet = true;
+            }
+            if (in_array('id', $dumpResult->getFields())) {
                 $creater->string('id');
-                $creater->primary('id');
+                if (!$primarySet) {
+					$creater->primary('id');
+				}
             }
 
             $creater->engine('InnoDB');
@@ -146,7 +162,6 @@ class MariaImporter {
 
     private function importData(DumpResult $dumpResult)
     {
-
         $fp = fopen($dumpResult->getDumpFile(), 'r+');
         $fieldNames = $dumpResult->getFields();
         $insertCounter = 0;
@@ -159,29 +174,11 @@ class MariaImporter {
                 $data
             );
 
-            $row = array_map(function ($val) {
-                if ($val == 'NULL') {
-                    return null;
-                }
-                return $val;
-            }, $row);
-
             $this->insertRecord($dumpResult, $row);
-
-
-            /*
-            try {
-                $database->insert($row)->into($dumpResult->getEntityName());
-                $insertCounter++;
-            } catch (\Exception $e) {
-                $this->logger->warn('Insert Error', [$e]);
-            }
-
-            if (($insertCounter % 1000) === 0) {
-                $this->logger->info('SQL row insert report', ['currentCount' => $insertCounter]);
-            }
-            */
         }
+
+        // flush again
+		$this->flushBulk($dumpResult);
 
         fclose($fp);
 
@@ -203,20 +200,37 @@ class MariaImporter {
             return;
         }
 
-        $sql = 'INSERT INTO '.$this->pdo->quote($dumpResult->getEntityName()).' ';
-        $sql .= '(';
+		$this->logger->info('Flushing bulk stack', ['rowCount' => count($this->insertStack)]);
 
-        // build query - must be same all db's
-        $fieldList = $dumpResult->getFields();
-        $sql .= implode(', ', $fieldList);
+        $sql = 'INSERT INTO '.$this->compiler->wrap($dumpResult->getEntityName());
+        $fields = $this->quoteArray($dumpResult->getFields(), false);
 
-        $sql .= ') VALUES ';
+        // field list
+        $sql .= ' ('.implode(',', $fields).')';
 
-        $els = array_map(function($record) {
-            return '('.impl
-        }, $this->insertStack);
+        // values
+		$rows = [];
+		foreach ($this->insertStack as $row) {
+			$rows[] = implode(',', $this->quoteArray($row));
+		}
 
+		$sql .= ' VALUES ('.implode('),(', $rows).')';
 
+		$this->pdo->query($sql);
+
+		// empty stack
         $this->insertStack = [];
     }
+
+    private function quoteArray($array, $isData = true) {
+    	return array_map(function($value) use ($isData) {
+    		if ($value == 'NULL') {
+    			return 'null';
+			}
+			if ($isData) {
+				return $this->compiler->quote($value);
+			}
+    		return $this->compiler->wrap($value);
+		}, $array);
+	}
 }
