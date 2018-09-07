@@ -159,14 +159,16 @@ class PdoImporter {
             // has index?
 			$primarySet = false;
             if (in_array('_id', $dumpResult->getFields())) {
-                $creater->string('_id');
+                $creater->string('_id')->notNull();
                 $creater->primary('_id');
                 $primarySet = true;
             }
             if (in_array('id', $dumpResult->getFields())) {
-                $creater->string('id');
                 if (!$primarySet) {
+					$creater->string('id')->notNull();
 					$creater->primary('id');
+				} else {
+					$creater->string('id');
 				}
             }
 
