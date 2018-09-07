@@ -167,7 +167,16 @@ class MongoDumper {
                     $this->fieldLengths[$name] = strlen($value);
                 }
 
-                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == 'string') {
+				// workaround for *Id named fields -> make them strings
+				if (substr($name, -2) == 'Id') {
+					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+				}
+				// workaround for fields named 'number'
+				if ($name == 'number') {
+					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+				}
+
+                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_STRING) {
                     continue;
                 }
 
@@ -182,6 +191,14 @@ class MongoDumper {
                 }
             }
         }
+
+        // correct lengths for numbers
+		$maxSize = 9;
+        foreach ($this->fieldLengths as $name => $length) {
+        	if ($length > $maxSize && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_INT) {
+        		$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+			}
+		}
 
         $this->logger->info('Collected field count', ['count' => count($this->fields)]);
 
@@ -298,6 +315,9 @@ class MongoDumper {
                 } else {
                     $propertyName = $namePrefix.'_'.$prop;
                 }
+
+                // clean dollar sign
+				$propertyName = str_replace('$', '_', $propertyName);
 
                 $flatRecord[$propertyName] = $value;
             }

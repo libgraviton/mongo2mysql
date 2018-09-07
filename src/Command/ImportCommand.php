@@ -4,7 +4,7 @@
  */
 namespace Graviton\Mongo2Mysql\Command;
 
-use Graviton\Mongo2Mysql\MariaImporter;
+use Graviton\Mongo2Mysql\PdoImporter;
 use Graviton\Mongo2Mysql\MongoDumper;
 use Graviton\Mongo2Mysql\Util\Logger;
 use Symfony\Component\Console\Command\Command;
@@ -84,8 +84,15 @@ class ImportCommand extends Command
                             null,
                             InputOption::VALUE_OPTIONAL,
                             'How many records we should read in the first pass to determine schema fields (limit)',
-                            500
-                        )
+                            1000
+                        ),
+						new InputOption(
+							'bulkInsertSize',
+							null,
+							InputOption::VALUE_OPTIONAL,
+							'How many records should be inserted with one INSERT statement',
+							300
+						)
                     ]
                 )
             );
@@ -116,11 +123,12 @@ class ImportCommand extends Command
 
         $dumpResult = $dumper->dump();
 
-        $importer = new MariaImporter(
+        $importer = new PdoImporter(
             $logger,
             $input->getArgument('targetMysqlDsn'),
             $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword')
+            $input->getArgument('targetMysqlPassword'),
+			$input->getOption('bulkInsertSize')
         );
         $importer->import($dumpResult);
     }
