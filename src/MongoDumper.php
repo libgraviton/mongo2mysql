@@ -167,7 +167,16 @@ class MongoDumper {
                     $this->fieldLengths[$name] = strlen($value);
                 }
 
-                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == 'string') {
+				// workaround for *Id named fields -> make them strings
+				if (substr($name, -2) == 'Id') {
+					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+				}
+				// workaround for fields named 'number'
+				if ($name == 'number') {
+					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+				}
+
+                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_STRING) {
                     continue;
                 }
 

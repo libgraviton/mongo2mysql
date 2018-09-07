@@ -3,6 +3,7 @@ namespace Graviton\Mongo2Mysql;
 
 use Graviton\Mongo2Mysql\Db\CompilerGetter;
 use Graviton\Mongo2Mysql\Model\DumpResult;
+use Graviton\Mongo2Mysql\Util\MetaLogger;
 use Monolog\Logger;
 use Opis\Database\Connection;
 use Opis\Database\Database;
@@ -20,6 +21,11 @@ class PdoImporter {
      * @var Logger
      */
     private $logger;
+
+	/**
+	 * @var MetaLogger
+	 */
+    private $metaLogger;
 
     /**
      * PDO DSN
@@ -51,6 +57,8 @@ class PdoImporter {
 
     private $insertStack = [];
     private $insertBulkSize;
+    private $insertCounter = 0;
+	private $insertCounterError = 0;
 
     public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword, $insertBulkSize)
     {
@@ -80,11 +88,24 @@ class PdoImporter {
 
         $this->connection = Connection::fromPDO($this->pdo);
         $this->compiler = CompilerGetter::getInstance($this->connection);
+        $this->metaLogger = new MetaLogger($this->logger, $this->connection);
 
         try {
             $this->logger->info('Creating target PDO table', ['name' => $dumpResult->getEntityName()]);
+			$this->metaLogger->start($dumpResult->getEntityName());
+
             $this->createTableSchema($dumpResult);
             $this->importData($dumpResult);
+
+			$this->metaLogger->stop($dumpResult->getEntityName(), $this->insertCounter, $this->insertCounterError);
+
+			$this->logger->info(
+				'Finished PDO import',
+				[
+					'totalCount' => $this->insertCounter,
+					'errorCount' => $this->insertCounterError
+				]
+			);
         } catch (\Exception $e) {
             $this->logger->crit('Error in creating the target schema or importing data', ['exception' => $e]);
         }
@@ -116,11 +137,6 @@ class PdoImporter {
                 if (isset($fieldTypes[$fieldName])) {
                     $type = $fieldTypes[$fieldName];
                 } else {
-                    $type = DumpResult::FIELDTYPE_STRING;
-                }
-
-                // workaround for *Id named fields -> make them strings
-                if (substr($fieldName, -2) == 'Id') {
                     $type = DumpResult::FIELDTYPE_STRING;
                 }
 
@@ -164,7 +180,6 @@ class PdoImporter {
     {
         $fp = fopen($dumpResult->getDumpFile(), 'r+');
         $fieldNames = $dumpResult->getFields();
-        $insertCounter = 0;
 
         $this->logger->info('Starting to execute INSERT queries...');
 
@@ -181,8 +196,6 @@ class PdoImporter {
 		$this->flushBulk($dumpResult);
 
         fclose($fp);
-
-        $this->logger->info('Finished PDO import', ['totalCount' => $insertCounter]);
     }
 
     private function insertRecord(DumpResult $dumpResult, $record)
@@ -200,7 +213,9 @@ class PdoImporter {
             return;
         }
 
-		$this->logger->info('Flushing bulk stack', ['rowCount' => count($this->insertStack)]);
+        $rowCount = count($this->insertStack);
+
+		$this->logger->info('Flushing bulk stack', ['rowCount' => $rowCount]);
 
         $sql = 'INSERT INTO '.$this->compiler->wrap($dumpResult->getEntityName());
         $fields = $this->quoteArray($dumpResult->getFields(), false);
@@ -216,7 +231,14 @@ class PdoImporter {
 
 		$sql .= ' VALUES ('.implode('),(', $rows).')';
 
-		$this->pdo->query($sql);
+		try {
+			$this->pdo->query($sql);
+			$this->insertCounter += $rowCount;
+		} catch (\Exception $e) {
+			echo $sql.PHP_EOL;
+			$this->logger->error('SQL INSERT error', ['e' => $e]);
+			$this->insertCounterError += $rowCount;
+		}
 
 		// empty stack
         $this->insertStack = [];
