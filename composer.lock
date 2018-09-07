@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1d527f6e0606e5b68e1ed9c60758e41f",
+    "content-hash": "7ac63d7201a20c5ad48159d68a14ead6",
     "packages": [
         {
             "name": "mongodb/mongodb",
@@ -151,16 +151,16 @@
         },
         {
             "name": "opis/database",
-            "version": "4.0.0",
+            "version": "dev-feature/nullable",
             "source": {
                 "type": "git",
-                "url": "https://github.com/opis/database.git",
-                "reference": "f420da08fdbfc39aad2573254c09db1121cca4e1"
+                "url": "https://github.com/libgraviton/database.git",
+                "reference": "e063f784647e9ee0c1705a1f3b1b566e8ab64255"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/opis/database/zipball/f420da08fdbfc39aad2573254c09db1121cca4e1",
-                "reference": "f420da08fdbfc39aad2573254c09db1121cca4e1",
+                "url": "https://api.github.com/repos/libgraviton/database/zipball/e063f784647e9ee0c1705a1f3b1b566e8ab64255",
+                "reference": "e063f784647e9ee0c1705a1f3b1b566e8ab64255",
                 "shasum": ""
             },
             "require": {
@@ -181,7 +181,16 @@
                     "Opis\\Database\\": "src/"
                 }
             },
-            "notification-url": "https://packagist.org/downloads/",
+            "autoload-dev": {
+                "psr-4": {
+                    "Opis\\Database\\Test\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "vendor/bin/phpunit"
+                ]
+            },
             "license": [
                 "Apache-2.0"
             ],
@@ -194,7 +203,7 @@
             "description": "A database abstraction layer over PDO, that provides a powerful and intuitive query builder, bundled with an easy to use schema builder",
             "homepage": "http://opis.io",
             "keywords": [
-                "Abstraction Layer",
+                "abstraction layer",
                 "database",
                 "mysql",
                 "postgre",
@@ -204,7 +213,10 @@
                 "sql",
                 "sqlite"
             ],
-            "time": "2018-06-05T09:56:12+00:00"
+            "support": {
+                "source": "https://github.com/libgraviton/database/tree/feature/nullable"
+            },
+            "time": "2018-09-07T12:13:32+00:00"
         },
         {
             "name": "psr/log",
@@ -818,7 +830,9 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": [],
+    "stability-flags": {
+        "opis/database": 20
+    },
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": [],
