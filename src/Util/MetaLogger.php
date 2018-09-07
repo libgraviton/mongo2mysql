@@ -25,6 +25,8 @@ class MetaLogger
 
 	private $tableName = 'MongoImporterMetadata';
 
+	private $dateFormat = 'Y-m-d H:i:s';
+
 	private $recordId;
 
 	public function __construct(\Monolog\Logger $logger, Connection $conn) {
@@ -40,7 +42,7 @@ class MetaLogger
 			$this->db->insert(
 				[
 					'element_name' => $elementName,
-					'started_at' => new \DateTime()
+					'started_at' => (new \DateTime())->format($this->dateFormat)
 				]
 			)->into($this->tableName);
 
@@ -65,7 +67,7 @@ class MetaLogger
 			$this->db->update($this->tableName)
 				->where('id')->is($this->recordId)
 				->set([
-					'finished_at' => new \DateTime(),
+					'finished_at' => (new \DateTime())->format($this->dateFormat),
 					'record_count' => $recordCount,
 					'error_record_count' => $errorRecordCount
 				]);
