@@ -15,6 +15,8 @@ class DumpResult {
 
     private $success = true;
 
+    private $rowCount = 0;
+
     private $entityName;
 
     private $dumpFile;
@@ -46,6 +48,26 @@ class DumpResult {
     {
         $this->success = $success;
     }
+
+	/**
+	 * get RowCount
+	 *
+	 * @return int RowCount
+	 */
+	public function getRowCount() {
+		return $this->rowCount;
+	}
+
+	/**
+	 * set RowCount
+	 *
+	 * @param int $rowCount rowCount
+	 *
+	 * @return void
+	 */
+	public function setRowCount($rowCount) {
+		$this->rowCount = $rowCount;
+	}
 
     /**
      * get EntityName

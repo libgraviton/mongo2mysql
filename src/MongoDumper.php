@@ -262,7 +262,12 @@ class MongoDumper {
             $i++;
 
             if (($i % 10000) === 0) {
-                $this->logger->info('CSV Writing Status report', ['currentCount' => $i]);
+                $this->logger->info(
+                	'CSV Writing Status report',
+					[
+						'currentCount' => $i
+					]
+				);
             }
         }
 
@@ -271,6 +276,7 @@ class MongoDumper {
         $this->logger->info('Finished writing to CSV File', ['filename' => $tempFile, 'count' => $i]);
 
         $dumpResult->setDumpFile($tempFile);
+        $dumpResult->setRowCount($i);
 
         return $dumpResult;
     }
