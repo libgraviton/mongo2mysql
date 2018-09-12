@@ -52,6 +52,25 @@ class MongoDumper {
      */
     private $tempDir;
 
+	/**
+	 * filter to select mongo data
+	 *
+	 * @var array
+	 */
+    private $selectFilter = [];
+
+	/**
+	 * @var array filter ops map
+	 */
+    private $selectFilterOps = [
+    	'==' => 'eq',
+		'!=' => 'ne',
+		'>=' => 'gte',
+		'<=' => 'lte',
+		'>' => 'gt',
+		'<' => 'lt'
+	];
+
     /**
      * @var int
      * @see https://mariadb.com/kb/en/library/identifier-names/
@@ -99,8 +118,9 @@ class MongoDumper {
      * @param string $databaseName   database name
      * @param string $collectionName collection name
      * @param string $tempDir        temp dir
+	 * @param array  $selectFilter   filter to select for
      */
-    public function __construct(Logger $logger, $dsn, $databaseName, $collectionName, $tempDir)
+    public function __construct(Logger $logger, $dsn, $databaseName, $collectionName, $tempDir, array $selectFilter)
     {
         $this->logger = $logger;
         $this->client = new Client($dsn);
@@ -108,6 +128,7 @@ class MongoDumper {
         $this->collectionName = $collectionName;
         $this->tempDir = $tempDir;
         $this->collection = $this->client->{$databaseName}->{$collectionName};
+        $this->selectFilter = $selectFilter;
     }
 
     /**
@@ -225,7 +246,7 @@ class MongoDumper {
         $fp = fopen($tempFile, 'w+');
 
         $i = 0;
-        foreach ($this->collection->find([]) as $record) {
+        foreach ($this->collection->find($this->getSelectFilter()) as $record) {
             $flatRecord = $this->makeFlat($record);
             $thisRecord = [];
 
@@ -275,6 +296,51 @@ class MongoDumper {
 
         return $value;
     }
+
+	/**
+	 * returns a filter to select data
+	 *
+	 * @return array filter
+	 */
+    private function getSelectFilter()
+	{
+		$filter = [];
+		foreach ($this->selectFilter as $expression) {
+			$op = null;
+			$expressionParts = [];
+			foreach ($this->selectFilterOps as $sign => $name) {
+				if (strpos($expression, $sign) !== false) {
+					$op = $name;
+					$expressionParts = explode($sign, $expression);
+				}
+				if (!is_null($op)) {
+					break;
+				}
+			}
+
+			if (is_null($op) || count($expressionParts) != 2) {
+				throw new \LogicException('Wrong select query "'.$expression.'" - check --help of the app.');
+			}
+
+			// parse date..
+			if (preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/', $expressionParts[1])) {
+				$dt = \DateTime::createFromFormat(
+					'Y-m-d H:i:s',
+					$expressionParts[1].' 00:00:00',
+					new \DateTimeZone($this->timezone)
+				);
+				$expressionParts[1] = new UTCDateTime($dt);
+			}
+
+			$filter[$expressionParts[0]] = ['$'.$op => $expressionParts[1]];
+		}
+
+		if (!empty($filter)) {
+			$this->logger->info('Using source data filter', ['filter' => $filter]);
+		}
+
+		return $filter;
+	}
 
     /**
      * takes an object from mongodb and flattens it out
