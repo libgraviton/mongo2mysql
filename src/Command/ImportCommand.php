@@ -92,6 +92,16 @@ class ImportCommand extends Command
 							InputOption::VALUE_OPTIONAL,
 							'How many records should be inserted with one INSERT statement',
 							300
+						),
+						new InputOption(
+							'mongoFilter',
+							null,
+							InputOption::VALUE_IS_ARRAY + InputOption::VALUE_OPTIONAL,
+							'Possible filter to select data. Format is "fieldName[OP]fieldValue". '.
+							'Possible ops: [==, !=, >=, <=, >, <]. '.
+							'If you want to filter date value, use YYYY-MM-DD format, that will be parsed. '.
+							'This parameter can be supplied multiple times. '.
+							'Example: fieldName>=2010-10-10'
 						)
                     ]
                 )
@@ -116,7 +126,8 @@ class ImportCommand extends Command
             $input->getArgument('sourceMongoDsn'),
             $input->getArgument('sourceMongoDb'),
             $input->getArgument('sourceMongoCollection'),
-            $input->getOption('tempDir')
+            $input->getOption('tempDir'),
+			$input->getOption('mongoFilter')
         );
         $dumper->setTimezone($input->getOption('tz'));
         $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
