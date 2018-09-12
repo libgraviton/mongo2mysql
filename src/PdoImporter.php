@@ -217,8 +217,6 @@ class PdoImporter {
 
         $rowCount = count($this->insertStack);
 
-		$this->logger->info('Flushing bulk stack', ['rowCount' => $rowCount]);
-
         $sql = 'INSERT INTO '.$this->compiler->wrap($dumpResult->getEntityName());
         $fields = $this->quoteArray($dumpResult->getFields(), false);
 
@@ -241,6 +239,16 @@ class PdoImporter {
 			$this->logger->error('SQL INSERT error', ['e' => $e]);
 			$this->insertCounterError += $rowCount;
 		}
+
+		$this->logger->info(
+			'Flushed bulk stack',
+			[
+				'totalCount' => $dumpResult->getRowCount(),
+				'rowCount' => $rowCount,
+				'currentCount' => ($this->insertCounter + $this->insertCounterError),
+				'progress' => round((100/$dumpResult->getRowCount()) * ($this->insertCounter + $this->insertCounterError),2).'%'
+			]
+		);
 
 		// empty stack
         $this->insertStack = [];
