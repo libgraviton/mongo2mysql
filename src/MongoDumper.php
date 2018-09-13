@@ -364,7 +364,7 @@ class MongoDumper {
                 if (empty($namePrefix)) {
                     $subNamePrefix = $prop;
                 } else {
-                    $subNamePrefix = $namePrefix;
+                    $subNamePrefix = $namePrefix.'_'.$prop;
                 }
 
                 $flatRecord = $this->makeFlat($value, $flatRecord, $subNamePrefix);
