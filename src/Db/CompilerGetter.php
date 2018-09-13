@@ -12,17 +12,25 @@ class CompilerGetter {
 
 	public static function getInstance(Connection $connection)
 	{
-		switch ($connection->getDriver()) {
-			case 'mysql':
-				return new Maria();
-				break;
-			case 'dblib':
-			case 'mssql':
-			case 'sqlsrv':
-			case 'sybase':
-				return new SqlServer();
-				break;
-		}
+	    if (self::isSqlServer($connection)) {
+	        return new SqlServer();
+        }
+
+        return new Maria();
 	}
+
+	public static function isSqlServer(Connection $connection)
+    {
+        switch ($connection->getDriver()) {
+            case 'dblib':
+            case 'mssql':
+            case 'sqlsrv':
+            case 'sybase':
+                return true;
+                break;
+        }
+
+        return false;
+    }
 
 }
