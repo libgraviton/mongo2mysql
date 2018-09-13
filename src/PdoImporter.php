@@ -60,6 +60,12 @@ class PdoImporter {
     private $insertCounter = 0;
 	private $insertCounterError = 0;
 
+    /**
+     * @var bool
+     */
+	private $isSqlServer = false;
+	private $stringFieldLimit = 255;
+
     public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword, $insertBulkSize)
     {
         $this->logger = $logger;
@@ -87,6 +93,13 @@ class PdoImporter {
         );
 
         $this->connection = Connection::fromPDO($this->pdo);
+
+        // sql server specifics
+        $this->isSqlServer = CompilerGetter::isSqlServer($this->connection);
+        if ($this->isSqlServer) {
+            $this->stringFieldLimit = 4000;
+        }
+
         $this->compiler = CompilerGetter::getInstance($this->connection);
         $this->metaLogger = new MetaLogger($this->logger, $this->connection);
 
@@ -131,6 +144,7 @@ class PdoImporter {
         }
 
         $database->schema()->create($dumpResult->getEntityName(), function (CreateTable $creater) use ($dumpResult) {
+            $fieldLengths = $dumpResult->getFieldLengths();
             $fieldTypes = $dumpResult->getFieldTypes();
 
             foreach ($dumpResult->getFields() as $fieldName) {
@@ -140,9 +154,19 @@ class PdoImporter {
                     $type = DumpResult::FIELDTYPE_STRING;
                 }
 
+                $fieldLength = null;
+                if (isset($fieldLengths[$fieldName])) {
+                    // give some room
+                    $fieldLength = (int) floor($fieldLengths[$fieldName] * 2);
+                }
+
                 switch ($type) {
                     case DumpResult::FIELDTYPE_STRING:
-                        $creater->text($fieldName);
+                        if (!is_null($fieldLength) && $fieldLength < $this->stringFieldLimit) {
+                            $creater->string($fieldName, $fieldLength);
+                        } else {
+                            $creater->text($fieldName);
+                        }
                         break;
                     case DumpResult::FIELDTYPE_BOOL:
                         $creater->boolean($fieldName);
