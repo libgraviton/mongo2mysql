@@ -94,6 +94,12 @@ class ImportCommand extends Command
 							300
 						),
 						new InputOption(
+							'targetTableName',
+							null,
+							InputOption::VALUE_OPTIONAL,
+							'How the target table should be named'
+						),
+						new InputOption(
 							'mongoFilter',
 							null,
 							InputOption::VALUE_IS_ARRAY + InputOption::VALUE_OPTIONAL,
@@ -133,6 +139,11 @@ class ImportCommand extends Command
         $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
 
         $dumpResult = $dumper->dump();
+
+        $targetTableName = $input->getOption('targetTableName');
+        if (!is_null($targetTableName)) {
+        	$dumpResult->setEntityName($targetTableName);
+		}
 
         $importer = new PdoImporter(
             $logger,
