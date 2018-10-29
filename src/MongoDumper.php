@@ -111,6 +111,11 @@ class MongoDumper {
     private $timezone = 'UTC';
 
     /**
+     * @var string
+     */
+    private $pipelineFile;
+
+    /**
      * MongoDumper constructor.
      *
      * @param Logger $logger         logger
@@ -156,6 +161,14 @@ class MongoDumper {
     }
 
     /**
+     * @param string $pipelineFile
+     */
+    public function setPipelineFile($pipelineFile)
+    {
+        $this->pipelineFile = $pipelineFile;
+    }
+
+    /**
      * dumps mongo stuff into a file
      *
      * @return DumpResult result
@@ -173,7 +186,7 @@ class MongoDumper {
         /**
          * first pass: schema and types
          */
-        foreach ($this->collection->find([], ['limit' => $this->schemaSampleSize]) as $record) {
+        foreach ($this->getMongoIterator([], $this->schemaSampleSize) as $record) {
             $flatRecord = $this->makeFlat($record);
 
             $this->fields = array_unique(
@@ -246,7 +259,7 @@ class MongoDumper {
         $fp = fopen($tempFile, 'w+');
 
         $i = 0;
-        foreach ($this->collection->find($this->getSelectFilter()) as $record) {
+        foreach ($this->getMongoIterator($this->getSelectFilter()) as $record) {
             $flatRecord = $this->makeFlat($record);
             $thisRecord = [];
 
@@ -400,5 +413,61 @@ class MongoDumper {
         });
 
         return $flatRecord;
+    }
+
+    /**
+     * returns either a find() or aggreation pipeline iterator
+     *
+     * @param array $selectFilter
+     * @param array $limit
+     * @return \MongoDB\Driver\Cursor|\Traversable
+     */
+    private function getMongoIterator(array $selectFilter = [], $limit = []) {
+        if (is_null($this->pipelineFile)) {
+            if (is_numeric($limit)) {
+                $limit = ['limit' => $limit];
+            }
+
+            return $this->collection->find($selectFilter, $limit);
+        }
+
+        $pipeline = json_decode(
+            file_get_contents($this->pipelineFile),
+        true
+        );
+
+        $pipeline = $this->replaceInPipeline($pipeline);
+
+        // add limit
+        if (is_numeric($limit)) {
+            $pipeline[] = ['$limit' => $limit];
+        }
+
+        $this->logger->info(
+            'Using a pipeline to select the data to export',
+            [
+                'file' => $this->pipelineFile,
+                'pipeline' => $pipeline
+            ]
+        );
+
+        return $this->collection->aggregate($pipeline);
+    }
+
+    /**
+     * a duplication from mother project in order to clean up dates..
+     *
+     * @param array $pipeline
+     */
+    private function replaceInPipeline(array $pipeline) {
+        foreach ($pipeline as $key => $prop) {
+            if (is_array($prop)) {
+                $pipeline[$key] = $this->replaceInPipeline($prop);
+            }
+            if (is_string($prop) && $prop == '#newDate#') {
+                $pipeline[$key] = new UTCDateTime();
+            }
+        }
+        return $pipeline;
     }
 }

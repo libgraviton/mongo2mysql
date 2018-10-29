@@ -13,6 +13,7 @@ use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * @author   List of contributors <https://github.com/libgraviton/mongo2mysql/graphs/contributors>
@@ -49,6 +50,12 @@ class ImportCommand extends Command
                             'sourceMongoCollection',
                             InputArgument::REQUIRED,
                             'Collection in the MongoDB to select'
+                        ),
+                        new InputOption(
+                            'sourceMongoPipelineFile',
+                            null,
+                            InputOption::VALUE_OPTIONAL,
+                            'Path to a php compliant aggregation pipeline file to export'
                         ),
                         new InputArgument(
                             'targetMysqlDsn',
@@ -94,6 +101,12 @@ class ImportCommand extends Command
 							300
 						),
 						new InputOption(
+							'targetTableName',
+							null,
+							InputOption::VALUE_OPTIONAL,
+							'How the target table should be named'
+						),
+						new InputOption(
 							'mongoFilter',
 							null,
 							InputOption::VALUE_IS_ARRAY + InputOption::VALUE_OPTIONAL,
@@ -132,7 +145,23 @@ class ImportCommand extends Command
         $dumper->setTimezone($input->getOption('tz'));
         $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
 
+        // pipeline file?
+        if (!is_null($input->getOption('sourceMongoPipelineFile'))) {
+            $pipelineFile = $input->getOption('sourceMongoPipelineFile');
+
+            if (!(new Filesystem())->exists($pipelineFile)) {
+                throw new \LogicException('File '.$pipelineFile.' does not exist!');
+            }
+
+            $dumper->setPipelineFile($pipelineFile);
+        }
+
         $dumpResult = $dumper->dump();
+
+        $targetTableName = $input->getOption('targetTableName');
+        if (!is_null($targetTableName)) {
+        	$dumpResult->setEntityName($targetTableName);
+		}
 
         $importer = new PdoImporter(
             $logger,
