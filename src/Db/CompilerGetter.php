@@ -19,6 +19,13 @@ class CompilerGetter {
         return new Maria();
 	}
 
+	public static function isMysql(Connection $connection) {
+	    if ($connection->getDriver() == 'mysql') {
+	        return true;
+        }
+	    return false;
+    }
+
 	public static function isSqlServer(Connection $connection)
     {
         switch ($connection->getDriver()) {

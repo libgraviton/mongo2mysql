@@ -88,7 +88,8 @@ class PdoImporter {
             $this->mysqlUser,
             $this->mysqlPassword,
             [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
             ]
         );
 
@@ -108,7 +109,12 @@ class PdoImporter {
 			$this->metaLogger->start($dumpResult->getEntityName());
 
             $this->createTableSchema($dumpResult);
-            $this->importData($dumpResult);
+
+            if (CompilerGetter::isMysql($this->connection)) {
+                $this->insertDataLoadDataInfile($dumpResult);
+            } else {
+                $this->importDataInsertStatement($dumpResult);
+            }
 
 			$this->metaLogger->stop($dumpResult->getEntityName(), $this->insertCounter, $this->insertCounterError);
 
@@ -202,7 +208,7 @@ class PdoImporter {
         $this->logger->info('Created table as derived from schema', ['tableName' => $dumpResult->getEntityName()]);
     }
 
-    private function importData(DumpResult $dumpResult)
+    private function importDataInsertStatement(DumpResult $dumpResult)
     {
         $fp = fopen($dumpResult->getDumpFile(), 'r+');
         $fieldNames = $dumpResult->getFields();
@@ -276,6 +282,21 @@ class PdoImporter {
 
 		// empty stack
         $this->insertStack = [];
+    }
+
+    private function insertDataLoadDataInfile(DumpResult $dumpResult) {
+        $query = 'LOAD DATA LOCAL INFILE ';
+        $query .= $this->pdo->quote($dumpResult->getDumpFile(), \PDO::PARAM_STMT);
+        $query .= ' INTO TABLE `'.$dumpResult->getEntityName().'` ';
+        $query .= ' CHARACTER SET utf8 ';
+        $query .= ' FIELDS TERMINATED BY \',\' ';
+        $query .= ' ENCLOSED BY \'"\' ';
+        $query .= ' LINES TERMINATED BY \'\n\' ';
+
+        $this->logger->info('LOAD DATA INFILE capable target recognized, using that method..');
+        $this->logger->info('Starting import query', ['query' => $query]);
+
+        $this->pdo->query($query);
     }
 
     private function quoteArray($array, $isData = true) {
