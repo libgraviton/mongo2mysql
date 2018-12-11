@@ -297,6 +297,8 @@ class PdoImporter {
         $this->logger->info('Starting import query', ['query' => $query]);
 
         $this->pdo->query($query);
+
+        $this->insertCounter = $dumpResult->getRowCount();
     }
 
     private function quoteArray($array, $isData = true) {
