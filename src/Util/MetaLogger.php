@@ -39,12 +39,12 @@ class MetaLogger
 		$this->ensureSchema();
 
 		try {
-			$this->db->insert(
-				[
-					'element_name' => $elementName,
-					'started_at' => (new \DateTime())->format($this->dateFormat)
-				]
-			)->into($this->tableName);
+		    $insertData = [
+                'element_name' => $elementName,
+                'started_at' => (new \DateTime())->format($this->dateFormat)
+            ];
+
+			$this->db->insert($insertData)->into($this->tableName);
 
 			// fetch id
 			$data = $this->db->from($this->tableName)
@@ -56,6 +56,8 @@ class MetaLogger
 			if (isset($data['maxid'])) {
 				$this->recordId = (int)$data['maxid'];
 			}
+
+			$this->logger->info('Inserted metadata entry.', ['data' => $insertData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
 			$this->logger->warn('Error creating metadata entry', ['e' => $e]);
 		}
@@ -64,13 +66,17 @@ class MetaLogger
 	public function stop($elementName, $recordCount, $errorRecordCount)
 	{
 		try {
+		    $updateData = [
+                'finished_at' => (new \DateTime())->format($this->dateFormat),
+                'record_count' => $recordCount,
+                'error_record_count' => $errorRecordCount
+            ];
+
 			$this->db->update($this->tableName)
 				->where('id')->is($this->recordId)
-				->set([
-					'finished_at' => (new \DateTime())->format($this->dateFormat),
-					'record_count' => $recordCount,
-					'error_record_count' => $errorRecordCount
-				]);
+				->set($updateData);
+
+            $this->logger->info('Updated metadata entry.', ['data' => $updateData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
 			$this->logger->warn('Error updating metadata entry', ['e' => $e]);
 		}
@@ -89,7 +95,11 @@ class MetaLogger
 				$creater->integer('error_record_count');
 			});
 		} catch (\Exception $e) {
-			$this->logger->warn('Error creating metadata table', ['e' => $e]);
+		    $message = $e->getMessage();
+		    if (strpos($message, 'already exists') == false) {
+		        // we don't need to know that it already exists
+                $this->logger->warn('Error creating metadata table', ['e' => $e]);
+            }
 		}
 	}
 }
