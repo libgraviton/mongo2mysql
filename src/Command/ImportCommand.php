@@ -80,6 +80,13 @@ class ImportCommand extends Command
                             sys_get_temp_dir()
                         ),
                         new InputOption(
+                            'stringFieldLimit',
+                            null,
+                            InputOption::VALUE_OPTIONAL,
+                            'Limit when a field length is a TEXT; not a VARCHAR',
+                            3000
+                        ),
+                        new InputOption(
                             'tz',
                             null,
                             InputOption::VALUE_OPTIONAL,
@@ -170,6 +177,7 @@ class ImportCommand extends Command
             $input->getArgument('targetMysqlPassword'),
 			$input->getOption('bulkInsertSize')
         );
+        $importer->setStringFieldLimit($input->getOption('stringFieldLimit'));
         $importer->import($dumpResult);
     }
 }

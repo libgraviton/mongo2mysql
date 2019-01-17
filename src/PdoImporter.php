@@ -64,7 +64,7 @@ class PdoImporter {
      * @var bool
      */
 	private $isSqlServer = false;
-	private $stringFieldLimit = 255;
+	private $stringFieldLimit = 3000;
 
     public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword, $insertBulkSize)
     {
@@ -74,6 +74,17 @@ class PdoImporter {
         $this->mysqlPassword = $mysqlPassword;
         $this->fs = new Filesystem();
         $this->insertBulkSize = (int) $insertBulkSize;
+    }
+
+    /**
+     * set StringFieldLimit
+     *
+     * @param int $stringFieldLimit stringFieldLimit
+     *
+     * @return void
+     */
+    public function setStringFieldLimit($stringFieldLimit) {
+        $this->stringFieldLimit = $stringFieldLimit;
     }
 
     /**
