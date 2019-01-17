@@ -64,7 +64,7 @@ class PdoImporter {
      * @var bool
      */
 	private $isSqlServer = false;
-	private $stringFieldLimit = 255;
+	private $stringFieldLimit = 3000;
 
     public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword, $insertBulkSize)
     {
