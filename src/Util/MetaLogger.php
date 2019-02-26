@@ -1,9 +1,11 @@
 <?php
 
 namespace Graviton\Mongo2Mysql\Util;
+
 use Opis\Database\Connection;
 use Opis\Database\Database;
 use Opis\Database\Schema\CreateTable;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * @author   List of contributors <https://github.com/libgraviton/mongo2mysql/graphs/contributors>
@@ -23,25 +25,49 @@ class MetaLogger
 	 */
 	private $db;
 
+    /**
+     * @var Filesystem
+     */
+	private $fs;
+
 	private $tableName = 'MongoImporterMetadata';
 
 	private $dateFormat = 'Y-m-d H:i:s';
 
 	private $recordId;
 
+	private $reportLoadId;
+
 	public function __construct(\Monolog\Logger $logger, Connection $conn) {
 		$this->logger = $logger;
 		$this->db = new Database($conn);
+		$this->fs = new Filesystem();
 	}
+
+    /**
+     * set ReportLoadId
+     *
+     * @param mixed $reportLoadId reportLoadId
+     *
+     * @return void
+     */
+    public function setReportLoadId($reportLoadId) {
+        $this->reportLoadId = $reportLoadId;
+    }
 
 	public function start($elementName)
 	{
 		$this->ensureSchema();
 
 		try {
+		    $startTime = (new \DateTime())->format($this->dateFormat);
+
+            // local file report
+            $this->localFileReport($elementName, $startTime);
+
 		    $insertData = [
                 'element_name' => $elementName,
-                'started_at' => (new \DateTime())->format($this->dateFormat)
+                'started_at' => $startTime
             ];
 
 			$this->db->insert($insertData)->into($this->tableName);
@@ -66,8 +92,13 @@ class MetaLogger
 	public function stop($elementName, $recordCount, $errorRecordCount)
 	{
 		try {
+		    $endTime = (new \DateTime())->format($this->dateFormat);
+
+		    // local file report
+            $this->localFileReport($elementName, null, $endTime, $recordCount, $errorRecordCount);
+
 		    $updateData = [
-                'finished_at' => (new \DateTime())->format($this->dateFormat),
+                'finished_at' => $endTime,
                 'record_count' => $recordCount,
                 'error_record_count' => $errorRecordCount
             ];
@@ -102,4 +133,51 @@ class MetaLogger
             }
 		}
 	}
+
+	private function localFileReport($elementName, $startTime = null, $endTime = null, $recordCount = null, $errorRecordCount = null)
+    {
+        $reportFile = $this->getReportLoadIdFile();
+        if (is_null($reportFile)) {
+            return;
+        }
+
+        $this->logger->info('Writing local report file', ['file' => $reportFile]);
+
+        if ($this->fs->exists($reportFile)) {
+            $baseData = json_decode(file_get_contents($reportFile), true);
+        } else {
+            $baseData = [];
+        }
+
+        if (isset($baseData[$elementName])) {
+            $elementData = $baseData[$elementName];
+        } else {
+            $elementData = [];
+        }
+
+        if (!is_null($startTime)) {
+            $elementData['startTime'] = $startTime;
+        }
+        if (!is_null($endTime)) {
+            $elementData['endTime'] = $endTime;
+        }
+        if (!is_null($recordCount)) {
+            $elementData['recordCount'] = $recordCount;
+        }
+        if (!is_null($errorRecordCount)) {
+            $elementData['errorRecordCount'] = $errorRecordCount;
+        }
+
+        $baseData[$elementName] = $elementData;
+
+        $this->fs->dumpFile($reportFile, json_encode($baseData));
+    }
+
+	private function getReportLoadIdFile()
+    {
+        if (!is_null($this->reportLoadId)) {
+            return sys_get_temp_dir().'/'.$this->reportLoadId.'.json';
+        }
+        return null;
+    }
 }
