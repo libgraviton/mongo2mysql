@@ -113,6 +113,12 @@ class ImportCommand extends Command
 							InputOption::VALUE_OPTIONAL,
 							'How the target table should be named'
 						),
+                        new InputOption(
+                            'reportLoadId',
+                            null,
+                            InputOption::VALUE_OPTIONAL,
+                            'If given, we report our progress as this load ID'
+                        ),
 						new InputOption(
 							'mongoFilter',
 							null,
@@ -178,6 +184,9 @@ class ImportCommand extends Command
 			$input->getOption('bulkInsertSize')
         );
         $importer->setStringFieldLimit($input->getOption('stringFieldLimit'));
+        if (!is_null($input->getOption('reportLoadId'))) {
+            $importer->setReportLoadId($input->getOption('reportLoadId'));
+        }
         $importer->import($dumpResult);
     }
 }

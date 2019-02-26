@@ -27,6 +27,8 @@ class PdoImporter {
 	 */
     private $metaLogger;
 
+    private $reportLoadId;
+
     /**
      * PDO DSN
      *
@@ -88,6 +90,17 @@ class PdoImporter {
     }
 
     /**
+     * set ReportLoadId
+     *
+     * @param mixed $reportLoadId reportLoadId
+     *
+     * @return void
+     */
+    public function setReportLoadId($reportLoadId) {
+        $this->reportLoadId = $reportLoadId;
+    }
+
+    /**
      * dumps mongo stuff into a file
      *
      * @return DumpResult result
@@ -114,6 +127,7 @@ class PdoImporter {
 
         $this->compiler = CompilerGetter::getInstance($this->connection);
         $this->metaLogger = new MetaLogger($this->logger, $this->connection);
+        $this->metaLogger->setReportLoadId($this->reportLoadId);
 
         try {
             $this->logger->info('Creating target PDO table', ['name' => $dumpResult->getEntityName()]);
