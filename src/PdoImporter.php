@@ -1,6 +1,9 @@
 <?php
 namespace Graviton\Mongo2Mysql;
 
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Platforms\MySqlPlatform;
+use Doctrine\DBAL\Schema\Schema;
 use Graviton\Mongo2Mysql\Db\CompilerGetter;
 use Graviton\Mongo2Mysql\Model\DumpResult;
 use Graviton\Mongo2Mysql\Util\MetaLogger;
@@ -162,6 +165,13 @@ class PdoImporter {
     {
         $database = new Database($this->connection);
 
+        $connection = DriverManager::getConnection(['pdo' => $this->pdo]);
+        $schemaManager = $connection->getSchemaManager();
+        $currentSchema = $schemaManager->createSchema();
+        $schema = clone $currentSchema;
+
+        $schema->dropTable($dumpResult->getEntityName());
+
         // drop if exists
         $this->logger->info('Dropping target table', ['tableName' => $dumpResult->getEntityName()]);
 
@@ -174,61 +184,63 @@ class PdoImporter {
             );
         }
 
-        $database->schema()->create($dumpResult->getEntityName(), function (CreateTable $creater) use ($dumpResult) {
-            $fieldLengths = $dumpResult->getFieldLengths();
-            $fieldTypes = $dumpResult->getFieldTypes();
+        if (!$schema->hasTable($dumpResult->getEntityName())) {
+            $table = $schema->createTable($dumpResult->getEntityName());
+        } else {
+            $table = $schema->getTable($dumpResult->getEntityName());
+        }
 
-            foreach ($dumpResult->getFields() as $fieldName) {
-                if (isset($fieldTypes[$fieldName])) {
-                    $type = $fieldTypes[$fieldName];
-                } else {
-                    $type = DumpResult::FIELDTYPE_STRING;
-                }
+        $fieldLengths = $dumpResult->getFieldLengths();
+        $fieldTypes = $dumpResult->getFieldTypes();
 
-                $fieldLength = null;
-                if (isset($fieldLengths[$fieldName])) {
-                    // give some room
-                    $fieldLength = (int) $fieldLengths[$fieldName];
-                }
-
-                switch ($type) {
-                    case DumpResult::FIELDTYPE_STRING:
-                        if (!is_null($fieldLength) && $fieldLength < $this->stringFieldLimit) {
-                            $creater->string($fieldName, $fieldLength);
-                        } else {
-                            $creater->text($fieldName);
-                        }
-                        break;
-                    case DumpResult::FIELDTYPE_BOOL:
-                        $creater->boolean($fieldName);
-                        break;
-                    case DumpResult::FIELDTYPE_INT:
-                        $creater->integer($fieldName)->length($fieldLength);
-                        break;
-                    case DumpResult::FIELDTYPE_DATETIME:
-                        $creater->dateTime($fieldName);
-                        break;
-                }
+        foreach ($dumpResult->getFields() as $fieldName) {
+            if (isset($fieldTypes[$fieldName])) {
+                $type = $fieldTypes[$fieldName];
+            } else {
+                $type = DumpResult::FIELDTYPE_STRING;
             }
 
-            // has index?
-			$primarySet = false;
-            if (in_array('_id', $dumpResult->getFields())) {
-                $creater->string('_id')->notNull();
-                $creater->primary('_id');
-                $primarySet = true;
-            }
-            if (in_array('id', $dumpResult->getFields())) {
-                if (!$primarySet) {
-					$creater->string('id')->notNull();
-					$creater->primary('id');
-				} else {
-					$creater->string('id');
-				}
+            $fieldLength = null;
+            if (isset($fieldLengths[$fieldName])) {
+                // give some room
+                $fieldLength = (int) $fieldLengths[$fieldName];
             }
 
-            $creater->engine('InnoDB');
-        });
+            $table->addColumn(
+                $fieldName,
+                $type,
+                [
+                    'Length' => $fieldLength
+                ]
+            );
+        }
+
+        // migrate to this schema
+        foreach ($currentSchema->getMigrateToSql($schema, $schemaManager->getDatabasePlatform()) as $query) {
+            var_dump($query);
+            $this->pdo->query($query);
+        }
+
+
+        // has index?
+        /*
+        $primarySet = false;
+        if (in_array('_id', $dumpResult->getFields())) {
+            $creater->string('_id')->notNull();
+            $creater->primary('_id');
+            $primarySet = true;
+        }
+        if (in_array('id', $dumpResult->getFields())) {
+            if (!$primarySet) {
+                $creater->string('id')->notNull();
+                $creater->primary('id');
+            } else {
+                $creater->string('id');
+            }
+        }
+
+        $creater->engine('InnoDB');
+        */
 
         $this->logger->info('Created table as derived from schema', ['tableName' => $dumpResult->getEntityName()]);
     }

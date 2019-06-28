@@ -15,7 +15,8 @@
         "opis/database": "dev-feature/nullable",
         "symfony/filesystem": "^4.1",
         "monolog/monolog": "^1.23",
-        "symfony/monolog-bridge": "^4.1"
+        "symfony/monolog-bridge": "^4.1",
+        "doctrine/dbal": "^2.9"
     },
     "license": "MIT",
     "autoload": {

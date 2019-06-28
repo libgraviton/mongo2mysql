@@ -11,7 +11,7 @@ class DumpResult {
     public const FIELDTYPE_STRING = 'string';
     public const FIELDTYPE_DATETIME = 'datetime';
     public const FIELDTYPE_BOOL = 'bool';
-    public const FIELDTYPE_INT = 'int';
+    public const FIELDTYPE_INT = 'integer';
 
     private $success = true;
 
