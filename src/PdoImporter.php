@@ -200,7 +200,7 @@ class PdoImporter {
 
             if (isset($fieldLengths[$fieldName])) {
                 // give some room -> don't do this if fieldspec is given!
-                $options['length'] = ((int) $fieldLengths[$fieldName]) * 2;
+                $options['length'] = ((int) $fieldLengths[$fieldName]); //* 2;
             }
 
             $options['notnull'] = true;
@@ -213,7 +213,10 @@ class PdoImporter {
                 $type,
                 $options
             );
+        }
 
+        if (!empty($dumpResult->getFieldsPrimary())) {
+            $table->setPrimaryKey(array_keys($dumpResult->getFieldsPrimary()));
         }
 
         // migrate to this schema
