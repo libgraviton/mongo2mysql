@@ -163,18 +163,19 @@ class PdoImporter {
 
     private function createTableSchema(DumpResult $dumpResult)
     {
-        $database = new Database($this->connection);
-
         $connection = DriverManager::getConnection(['pdo' => $this->pdo]);
         $schemaManager = $connection->getSchemaManager();
-        $currentSchema = $schemaManager->createSchema();
-        $schema = clone $currentSchema;
-
-        $schema->dropTable($dumpResult->getEntityName());
+        $schema = new Schema();
 
         // drop if exists
-        $this->logger->info('Dropping target table', ['tableName' => $dumpResult->getEntityName()]);
+        if ($schemaManager->createSchema()->hasTable($dumpResult->getEntityName())) {
+            $this->logger->info('Dropping target table', ['tableName' => $dumpResult->getEntityName()]);
+            $schemaManager->createSchema()->dropTable($dumpResult->getEntityName());
+        }
 
+        $table = $schema->createTable($dumpResult->getEntityName());
+
+        /*
         try {
             $database->schema()->drop($dumpResult->getEntityName());
         } catch (\Exception $e) {
@@ -183,12 +184,7 @@ class PdoImporter {
                 ['tableName' => $dumpResult->getEntityName()]
             );
         }
-
-        if (!$schema->hasTable($dumpResult->getEntityName())) {
-            $table = $schema->createTable($dumpResult->getEntityName());
-        } else {
-            $table = $schema->getTable($dumpResult->getEntityName());
-        }
+        */
 
         $fieldLengths = $dumpResult->getFieldLengths();
         $fieldTypes = $dumpResult->getFieldTypes();
@@ -200,24 +196,28 @@ class PdoImporter {
                 $type = DumpResult::FIELDTYPE_STRING;
             }
 
-            $fieldLength = null;
+            $options = [];
+
             if (isset($fieldLengths[$fieldName])) {
-                // give some room
-                $fieldLength = (int) $fieldLengths[$fieldName];
+                // give some room -> don't do this if fieldspec is given!
+                $options['length'] = ((int) $fieldLengths[$fieldName]) * 2;
+            }
+
+            $options['notnull'] = true;
+            if ($dumpResult->getFieldNullables()[$fieldName] == true) {
+                $options['notnull'] = false;
             }
 
             $table->addColumn(
                 $fieldName,
                 $type,
-                [
-                    'Length' => $fieldLength
-                ]
+                $options
             );
+
         }
 
         // migrate to this schema
-        foreach ($currentSchema->getMigrateToSql($schema, $schemaManager->getDatabasePlatform()) as $query) {
-            var_dump($query);
+        foreach ($schema->toSql($schemaManager->getDatabasePlatform()) as $query) {
             $this->pdo->query($query);
         }
 

@@ -113,6 +113,20 @@ class MongoDumper {
     private $fieldLengths = [];
 
     /**
+     * array of nullable flags
+     *
+     * @var array
+     */
+    private $fieldNullables = [];
+
+    /**
+     * array of primary flags
+     *
+     * @var array
+     */
+    private $fieldPrimary = [];
+
+    /**
      * @var string
      */
     private $timezone = 'UTC';
@@ -210,6 +224,8 @@ class MongoDumper {
         $dumpResult->setFields($this->fields);
         $dumpResult->setFieldTypes($this->fieldTypes);
         $dumpResult->setFieldLengths($this->fieldLengths);
+        $dumpResult->setFieldNullables($this->fieldNullables);
+        $dumpResult->setFieldsPrimary($this->fieldPrimary);
 
         // write into file
         $tempFile = tempnam($this->tempDir, 'grvmd');
@@ -507,23 +523,40 @@ class MongoDumper {
         foreach ($this->client->{$this->databaseName}->selectCollection($collectionName)->find() as $field) {
             $this->fields[] = $field['field'];
 
+            $thisFieldLength = 0;
             if (!isset($field['length'])) {
                 $this->logger->warn('No length property on field', ['field' => $field]);
             } else {
                 $this->fieldLengths[$field['field']] = $field['length'];
+                $thisFieldLength = $field['length'];
             }
 
             $type = DumpResult::FIELDTYPE_STRING;
             switch ($field['type']) {
                 case "int":
-                case "tinyint":
                     $type = DumpResult::FIELDTYPE_INT;
+                    break;
+                case "tinyint":
+                    $type = DumpResult::FIELDTYPE_SMALLINT;
+                    if ($thisFieldLength < 2) {
+                        $type = DumpResult::FIELDTYPE_BOOL;
+                    }
                     break;
                 case "datetime":
                     $type = DumpResult::FIELDTYPE_DATETIME;
                     break;
             }
             $this->fieldTypes[$field['field']] = $type;
+
+            // nullable?
+            $this->fieldNullables[$field['field']] = true;
+            if (isset($field['nullable']) && $field['nullable'] == false) {
+                $this->fieldNullables[$field['field']] = false;
+            }
+
+            if (isset($field['key']) && $field['key'] == 'PRI') {
+                $this->fieldPrimary[$field['field']] = true;
+            }
 
             // add projection
             $this->projection[] = [$field['path'] => 1];
