@@ -188,7 +188,7 @@ class PdoImporter {
                 $fieldLength = null;
                 if (isset($fieldLengths[$fieldName])) {
                     // give some room
-                    $fieldLength = (int) floor($fieldLengths[$fieldName] * 2);
+                    $fieldLength = (int) $fieldLengths[$fieldName];
                 }
 
                 switch ($type) {
@@ -203,7 +203,7 @@ class PdoImporter {
                         $creater->boolean($fieldName);
                         break;
                     case DumpResult::FIELDTYPE_INT:
-                        $creater->integer($fieldName);
+                        $creater->integer($fieldName)->length($fieldLength);
                         break;
                     case DumpResult::FIELDTYPE_DATETIME:
                         $creater->dateTime($fieldName);

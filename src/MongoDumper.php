@@ -59,6 +59,13 @@ class MongoDumper {
 	 */
     private $selectFilter = [];
 
+    /**
+     * a projection to use
+     *
+     * @var array
+     */
+    private $projection = [];
+
 	/**
 	 * @var array filter ops map
 	 */
@@ -376,8 +383,13 @@ class MongoDumper {
      */
     private function getMongoIterator(array $selectFilter = [], $limit = []) {
         if (is_null($this->pipelineFile)) {
+            $options = [];
             if (is_numeric($limit)) {
-                $limit = ['limit' => $limit];
+                $options['limit'] = $limit;
+            }
+
+            if (!empty($this->projection)) {
+                $options['projection'] = $this->projection;
             }
 
             return $this->collection->find($selectFilter, $limit);
@@ -489,11 +501,32 @@ class MongoDumper {
             ['collection' => $collectionName]
         );
 
-        foreach ($this->client->{$this->databaseName}->selectCollection($collectionName)->find() as $field) {
-            var_dump($field);
-        }
+        $this->fields = [];
+        $this->projection = [];
 
-        var_dump($collectionName);
-        die;
+        foreach ($this->client->{$this->databaseName}->selectCollection($collectionName)->find() as $field) {
+            $this->fields[] = $field['field'];
+
+            if (!isset($field['length'])) {
+                $this->logger->warn('No length property on field', ['field' => $field]);
+            } else {
+                $this->fieldLengths[$field['field']] = $field['length'];
+            }
+
+            $type = DumpResult::FIELDTYPE_STRING;
+            switch ($field['type']) {
+                case "int":
+                case "tinyint":
+                    $type = DumpResult::FIELDTYPE_INT;
+                    break;
+                case "datetime":
+                    $type = DumpResult::FIELDTYPE_DATETIME;
+                    break;
+            }
+            $this->fieldTypes[$field['field']] = $type;
+
+            // add projection
+            $this->projection[] = [$field['path'] => 1];
+        }
     }
 }
