@@ -178,61 +178,13 @@ class MongoDumper {
         $dumpResult = new DumpResult();
         $dumpResult->setEntityName($this->collectionName);
 
-        $this->logger->info(
-            'Starting first pass for schema and field types',
-            ['sampleSize' => $this->schemaSampleSize, 'collection' => $this->collectionName]
-        );
-
-        /**
-         * first pass: schema and types
-         */
-        foreach ($this->getMongoIterator([], $this->schemaSampleSize) as $record) {
-            $flatRecord = $this->makeFlat($record);
-
-            $this->fields = array_unique(
-                array_merge(array_keys($flatRecord), $this->fields)
-            );
-
-            foreach ($flatRecord as $name => $value) {
-                if (
-                    !isset($this->fieldLengths[$name]) ||
-                    (isset($this->fieldLengths[$name]) && strlen($value) > $this->fieldLengths[$name])
-                ) {
-                    $this->fieldLengths[$name] = strlen($value);
-                }
-
-				// workaround for *Id named fields -> make them strings
-				if (substr($name, -2) == 'Id') {
-					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-				}
-				// workaround for fields named 'number'
-				if ($name == 'number') {
-					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-				}
-
-                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_STRING) {
-                    continue;
-                }
-
-                if (is_bool($value)) {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_BOOL;
-                } elseif ($value instanceof UTCDateTime) {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_DATETIME;
-                } elseif (preg_match('/^[0-9]+$/', $value)) {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_INT;
-                } else {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-                }
-            }
+        // is there a fieldSpec collection?
+        $fieldSpecCollectionName = $this->collectionName . 'FieldSpec';
+        if ($this->client->{$this->databaseName}->selectCollection($fieldSpecCollectionName)->count() > 0) {
+            $this->determineSchemaFieldsByFieldSpec($fieldSpecCollectionName);
+        } else {
+            $this->determineSchemaFieldsBySampleSize();
         }
-
-        // correct lengths for numbers
-		$maxSize = 9;
-        foreach ($this->fieldLengths as $name => $length) {
-        	if ($length > $maxSize && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_INT) {
-        		$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-			}
-		}
 
         $this->logger->info('Collected field count', ['count' => count($this->fields)]);
 
@@ -469,5 +421,79 @@ class MongoDumper {
             }
         }
         return $pipeline;
+    }
+
+    private function determineSchemaFieldsBySampleSize()
+    {
+        $this->logger->info(
+            'Starting first pass for schema and field types',
+            ['sampleSize' => $this->schemaSampleSize, 'collection' => $this->collectionName]
+        );
+
+        /**
+         * first pass: schema and types
+         */
+        foreach ($this->getMongoIterator([], $this->schemaSampleSize) as $record) {
+            $flatRecord = $this->makeFlat($record);
+
+            $this->fields = array_unique(
+                array_merge(array_keys($flatRecord), $this->fields)
+            );
+
+            foreach ($flatRecord as $name => $value) {
+                if (
+                    !isset($this->fieldLengths[$name]) ||
+                    (isset($this->fieldLengths[$name]) && strlen($value) > $this->fieldLengths[$name])
+                ) {
+                    $this->fieldLengths[$name] = strlen($value);
+                }
+
+                // workaround for *Id named fields -> make them strings
+                if (substr($name, -2) == 'Id') {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+                }
+                // workaround for fields named 'number'
+                if ($name == 'number') {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+                }
+
+                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_STRING) {
+                    continue;
+                }
+
+                if (is_bool($value)) {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_BOOL;
+                } elseif ($value instanceof UTCDateTime) {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_DATETIME;
+                } elseif (preg_match('/^[0-9]+$/', $value)) {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_INT;
+                } else {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+                }
+            }
+        }
+
+        // correct lengths for numbers
+        $maxSize = 9;
+        foreach ($this->fieldLengths as $name => $length) {
+            if ($length > $maxSize && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_INT) {
+                $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+            }
+        }
+    }
+
+    private function determineSchemaFieldsByFieldSpec($collectionName)
+    {
+        $this->logger->info(
+            'Fields are specified in FieldSpec collection, will not do any guessing...',
+            ['collection' => $collectionName]
+        );
+
+        foreach ($this->client->{$this->databaseName}->selectCollection($collectionName)->find() as $field) {
+            var_dump($field);
+        }
+
+        var_dump($collectionName);
+        die;
     }
 }
