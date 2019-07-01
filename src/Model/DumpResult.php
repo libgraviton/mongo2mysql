@@ -10,10 +10,13 @@ class DumpResult {
 
     public const FIELDTYPE_STRING = 'string';
     public const FIELDTYPE_DATETIME = 'datetime';
-    public const FIELDTYPE_BOOL = 'bool';
-    public const FIELDTYPE_INT = 'int';
+    public const FIELDTYPE_BOOL = 'boolean';
+    public const FIELDTYPE_INT = 'integer';
+    public const FIELDTYPE_SMALLINT = 'smallint';
 
     private $success = true;
+
+    private $hasFieldSpec = false;
 
     private $rowCount = 0;
 
@@ -26,6 +29,10 @@ class DumpResult {
     private $fieldTypes = [];
 
     private $fieldLengths = [];
+
+    private $fieldNullables = [];
+
+    private $fieldsPrimary = [];
 
     /**
      * get Success
@@ -47,6 +54,22 @@ class DumpResult {
     public function setSuccess($success)
     {
         $this->success = $success;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isHasFieldSpec(): bool
+    {
+        return $this->hasFieldSpec;
+    }
+
+    /**
+     * @param bool $hasFieldSpec
+     */
+    public function setHasFieldSpec(bool $hasFieldSpec): void
+    {
+        $this->hasFieldSpec = $hasFieldSpec;
     }
 
 	/**
@@ -177,5 +200,45 @@ class DumpResult {
     public function setFieldLengths($fieldLengths)
     {
         $this->fieldLengths = $fieldLengths;
+    }
+
+    /**
+     * get FieldNullables
+     *
+     * @return array FieldNullables
+     */
+    public function getFieldNullables() {
+        return $this->fieldNullables;
+    }
+
+    /**
+     * set FieldNullables
+     *
+     * @param array $fieldNullables fieldNullables
+     *
+     * @return void
+     */
+    public function setFieldNullables($fieldNullables) {
+        $this->fieldNullables = $fieldNullables;
+    }
+
+    /**
+     * get FieldsPrimary
+     *
+     * @return array FieldsPrimary
+     */
+    public function getFieldsPrimary() {
+        return $this->fieldsPrimary;
+    }
+
+    /**
+     * set FieldsPrimary
+     *
+     * @param array $fieldsPrimary fieldsPrimary
+     *
+     * @return void
+     */
+    public function setFieldsPrimary($fieldsPrimary) {
+        $this->fieldsPrimary = $fieldsPrimary;
     }
 }

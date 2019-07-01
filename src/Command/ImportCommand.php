@@ -180,10 +180,8 @@ class ImportCommand extends Command
             $logger,
             $input->getArgument('targetMysqlDsn'),
             $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword'),
-			$input->getOption('bulkInsertSize')
+            $input->getArgument('targetMysqlPassword')
         );
-        $importer->setStringFieldLimit($input->getOption('stringFieldLimit'));
         if (!is_null($input->getOption('reportLoadId'))) {
             $importer->setReportLoadId($input->getOption('reportLoadId'));
         }

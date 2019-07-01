@@ -59,6 +59,13 @@ class MongoDumper {
 	 */
     private $selectFilter = [];
 
+    /**
+     * a projection to use
+     *
+     * @var array
+     */
+    private $projection = [];
+
 	/**
 	 * @var array filter ops map
 	 */
@@ -104,6 +111,20 @@ class MongoDumper {
      * @var array
      */
     private $fieldLengths = [];
+
+    /**
+     * array of nullable flags
+     *
+     * @var array
+     */
+    private $fieldNullables = [];
+
+    /**
+     * array of primary flags
+     *
+     * @var array
+     */
+    private $fieldPrimary = [];
 
     /**
      * @var string
@@ -178,61 +199,14 @@ class MongoDumper {
         $dumpResult = new DumpResult();
         $dumpResult->setEntityName($this->collectionName);
 
-        $this->logger->info(
-            'Starting first pass for schema and field types',
-            ['sampleSize' => $this->schemaSampleSize, 'collection' => $this->collectionName]
-        );
-
-        /**
-         * first pass: schema and types
-         */
-        foreach ($this->getMongoIterator([], $this->schemaSampleSize) as $record) {
-            $flatRecord = $this->makeFlat($record);
-
-            $this->fields = array_unique(
-                array_merge(array_keys($flatRecord), $this->fields)
-            );
-
-            foreach ($flatRecord as $name => $value) {
-                if (
-                    !isset($this->fieldLengths[$name]) ||
-                    (isset($this->fieldLengths[$name]) && strlen($value) > $this->fieldLengths[$name])
-                ) {
-                    $this->fieldLengths[$name] = strlen($value);
-                }
-
-				// workaround for *Id named fields -> make them strings
-				if (substr($name, -2) == 'Id') {
-					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-				}
-				// workaround for fields named 'number'
-				if ($name == 'number') {
-					$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-				}
-
-                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_STRING) {
-                    continue;
-                }
-
-                if (is_bool($value)) {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_BOOL;
-                } elseif ($value instanceof UTCDateTime) {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_DATETIME;
-                } elseif (preg_match('/^[0-9]+$/', $value)) {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_INT;
-                } else {
-                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-                }
-            }
+        // is there a fieldSpec collection?
+        $fieldSpecCollectionName = $this->collectionName . 'FieldSpec';
+        if ($this->client->{$this->databaseName}->selectCollection($fieldSpecCollectionName)->count() > 0) {
+            $this->determineSchemaFieldsByFieldSpec($fieldSpecCollectionName);
+            $dumpResult->setHasFieldSpec(true);
+        } else {
+            $this->determineSchemaFieldsBySampleSize();
         }
-
-        // correct lengths for numbers
-		$maxSize = 9;
-        foreach ($this->fieldLengths as $name => $length) {
-        	if ($length > $maxSize && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_INT) {
-        		$this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
-			}
-		}
 
         $this->logger->info('Collected field count', ['count' => count($this->fields)]);
 
@@ -251,6 +225,8 @@ class MongoDumper {
         $dumpResult->setFields($this->fields);
         $dumpResult->setFieldTypes($this->fieldTypes);
         $dumpResult->setFieldLengths($this->fieldLengths);
+        $dumpResult->setFieldNullables($this->fieldNullables);
+        $dumpResult->setFieldsPrimary($this->fieldPrimary);
 
         // write into file
         $tempFile = tempnam($this->tempDir, 'grvmd');
@@ -404,6 +380,13 @@ class MongoDumper {
                 // clean dollar sign
 				$propertyName = str_replace('$', '_', $propertyName);
 
+                if ($value === true) {
+                    $value = 1;
+                }
+                if ($value === false) {
+                    $value = 0;
+                }
+
                 $flatRecord[$propertyName] = $value;
             }
         }
@@ -422,13 +405,18 @@ class MongoDumper {
      * @param array $limit
      * @return \MongoDB\Driver\Cursor|\Traversable
      */
-    private function getMongoIterator(array $selectFilter = [], $limit = []) {
+    private function getMongoIterator(array $selectFilter = [], ?int $limit = null) {
         if (is_null($this->pipelineFile)) {
+            $options = [];
             if (is_numeric($limit)) {
-                $limit = ['limit' => $limit];
+                $options['limit'] = $limit;
             }
 
-            return $this->collection->find($selectFilter, $limit);
+            if (!empty($this->projection)) {
+                $options['projection'] = $this->projection;
+            }
+
+            return $this->collection->find($selectFilter, $options);
         }
 
         $pipeline = json_decode(
@@ -469,5 +457,115 @@ class MongoDumper {
             }
         }
         return $pipeline;
+    }
+
+    private function determineSchemaFieldsBySampleSize()
+    {
+        $this->logger->info(
+            'Starting first pass for schema and field types',
+            ['sampleSize' => $this->schemaSampleSize, 'collection' => $this->collectionName]
+        );
+
+        /**
+         * first pass: schema and types
+         */
+        foreach ($this->getMongoIterator([], $this->schemaSampleSize) as $record) {
+            $flatRecord = $this->makeFlat($record);
+
+            $this->fields = array_unique(
+                array_merge(array_keys($flatRecord), $this->fields)
+            );
+
+            foreach ($flatRecord as $name => $value) {
+                if (
+                    !isset($this->fieldLengths[$name]) ||
+                    (isset($this->fieldLengths[$name]) && strlen($value) > $this->fieldLengths[$name])
+                ) {
+                    $this->fieldLengths[$name] = strlen($value);
+                }
+
+                // workaround for *Id named fields -> make them strings
+                if (substr($name, -2) == 'Id') {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+                }
+                // workaround for fields named 'number'
+                if ($name == 'number') {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+                }
+
+                if (isset($this->fieldTypes[$name]) && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_STRING) {
+                    continue;
+                }
+
+                if (is_bool($value)) {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_BOOL;
+                } elseif ($value instanceof UTCDateTime) {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_DATETIME;
+                } elseif (preg_match('/^[0-9]+$/', $value)) {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_INT;
+                } else {
+                    $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+                }
+            }
+        }
+
+        // correct lengths for numbers
+        $maxSize = 9;
+        foreach ($this->fieldLengths as $name => $length) {
+            if ($length > $maxSize && $this->fieldTypes[$name] == DumpResult::FIELDTYPE_INT) {
+                $this->fieldTypes[$name] = DumpResult::FIELDTYPE_STRING;
+            }
+        }
+    }
+
+    private function determineSchemaFieldsByFieldSpec($collectionName)
+    {
+        $this->logger->info(
+            'Fields are specified in FieldSpec collection, will not do any guessing...',
+            ['collection' => $collectionName]
+        );
+
+        $this->fields = [];
+        $this->projection = [];
+
+        foreach ($this->client->{$this->databaseName}->selectCollection($collectionName)->find() as $field) {
+            $this->fields[] = $field['field'];
+
+            $thisFieldLength = 0;
+            if (isset($field['length'])) {
+                $this->fieldLengths[$field['field']] = $field['length'];
+                $thisFieldLength = $field['length'];
+            }
+
+            $type = DumpResult::FIELDTYPE_STRING;
+            switch ($field['type']) {
+                case "int":
+                    $type = DumpResult::FIELDTYPE_INT;
+                    break;
+                case "tinyint":
+                    $type = DumpResult::FIELDTYPE_SMALLINT;
+                    if ($thisFieldLength < 2) {
+                        $type = DumpResult::FIELDTYPE_BOOL;
+                    }
+                    break;
+                case "datetime":
+                    $type = DumpResult::FIELDTYPE_DATETIME;
+                    break;
+            }
+            $this->fieldTypes[$field['field']] = $type;
+
+            // nullable?
+            $this->fieldNullables[$field['field']] = true;
+            if (isset($field['nullable']) && $field['nullable'] == false) {
+                $this->fieldNullables[$field['field']] = false;
+            }
+
+            if (isset($field['key']) && $field['key'] == 'PRI') {
+                $this->fieldPrimary[$field['field']] = true;
+            }
+
+            // add projection
+            $this->projection[$field['path']] = 1;
+        }
     }
 }

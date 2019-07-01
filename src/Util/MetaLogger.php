@@ -2,9 +2,9 @@
 
 namespace Graviton\Mongo2Mysql\Util;
 
-use Opis\Database\Connection;
-use Opis\Database\Database;
-use Opis\Database\Schema\CreateTable;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Types\Type;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -21,7 +21,7 @@ class MetaLogger
 	private $logger;
 
 	/**
-	 * @var Database
+	 * @var Connection
 	 */
 	private $db;
 
@@ -38,9 +38,9 @@ class MetaLogger
 
 	private $reportLoadId;
 
-	public function __construct(\Monolog\Logger $logger, Connection $conn) {
+	public function __construct(\Monolog\Logger $logger, \PDO $pdo) {
 		$this->logger = $logger;
-		$this->db = new Database($conn);
+		$this->db = DriverManager::getConnection(['pdo' => $pdo]);
 		$this->fs = new Filesystem();
 	}
 
@@ -65,22 +65,31 @@ class MetaLogger
             // local file report
             $this->localFileReport($elementName, $startTime);
 
-		    $insertData = [
+            $insertData = [
                 'element_name' => $elementName,
                 'started_at' => $startTime
             ];
 
-			$this->db->insert($insertData)->into($this->tableName);
+		    $sql = $this->db
+                ->createQueryBuilder()
+                ->insert($this->tableName)
+                ->values([
+                    'element_name' => '?',
+                    'started_at' => '?'
+                ])
+                ->setParameters(array_values($insertData));
 
-			// fetch id
-			$data = $this->db->from($this->tableName)
-				->select(function ($include) {
-					$include->max('id', 'maxid');
-				})
-				->first();
+		    $sql->execute();
 
-			if (isset($data['maxid'])) {
-				$this->recordId = (int)$data['maxid'];
+		    $sql = $this->db
+                ->createQueryBuilder()
+                ->select(['max(id)'])
+                ->from($this->tableName)
+                ->execute();
+		    $row = $sql->fetch(\PDO::FETCH_BOTH);
+
+			if (isset($row[0])) {
+				$this->recordId = $row[0];
 			}
 
 			$this->logger->info('Inserted metadata entry.', ['data' => $insertData, 'recordId' => $this->recordId]);
@@ -103,9 +112,20 @@ class MetaLogger
                 'error_record_count' => $errorRecordCount
             ];
 
-			$this->db->update($this->tableName)
-				->where('id')->is($this->recordId)
-				->set($updateData);
+		    $this->db
+                ->createQueryBuilder()
+                ->update($this->tableName)
+                ->set('finished_at', '?')
+                ->set('record_count', '?')
+                ->set('error_record_count', '?')
+                ->where('id = ?')
+                ->setParameters(
+                    array_merge(
+                        array_values($updateData),
+                        [$this->recordId]
+                    )
+                )
+                ->execute();
 
             $this->logger->info('Updated metadata entry.', ['data' => $updateData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
@@ -116,19 +136,45 @@ class MetaLogger
 	private function ensureSchema()
 	{
 		try {
-			$this->db->schema()->create($this->tableName, function (CreateTable $creater) {
-				$idCol = $creater->integer('id');
-				$creater->autoincrement($idCol);
-				$creater->string('element_name');
-				$creater->dateTime('started_at');
-				$creater->dateTime('finished_at');
-				$creater->integer('record_count');
-				$creater->integer('error_record_count');
-			});
+		    $schemaManager = $this->db->getSchemaManager();
+		    $schema = $schemaManager->createSchema();
+		    $newSchema = clone $schema;
+
+		    if ($newSchema->hasTable($this->tableName)) {
+		        $table = $newSchema->getTable($this->tableName);
+            } else {
+		        $table = $newSchema->createTable($this->tableName);
+            }
+
+		    if (!$table->hasColumn('id')) {
+		        $col = $table->addColumn('id', Type::INTEGER);
+                $col->setAutoincrement(true);
+                $table->setPrimaryKey(['id']);
+            }
+
+            if (!$table->hasColumn('element_name')) {
+                $table->addColumn('element_name', Type::STRING);
+            }
+            if (!$table->hasColumn('started_at')) {
+                $table->addColumn('started_at', Type::DATETIME);
+            }
+            if (!$table->hasColumn('finished_at')) {
+                $table->addColumn('finished_at', Type::DATETIME)->setNotnull(false);
+            }
+            if (!$table->hasColumn('record_count')) {
+                $table->addColumn('record_count', Type::INTEGER)->setDefault(0)->setNotnull(false);
+            }
+            if (!$table->hasColumn('error_record_count')) {
+                $table->addColumn('error_record_count', Type::INTEGER)->setDefault(0)->setNotnull(false);
+            }
+
+            $migrations = $schema->getMigrateToSql($newSchema, $schemaManager->getDatabasePlatform());
+            foreach ($migrations as $migration) {
+                $this->db->exec($migration);
+            }
 		} catch (\Exception $e) {
 		    $message = $e->getMessage();
 		    if (strpos($message, 'already exists') == false) {
-		        // we don't need to know that it already exists
                 $this->logger->warn('Error creating metadata table', ['e' => $e]);
             }
 		}
