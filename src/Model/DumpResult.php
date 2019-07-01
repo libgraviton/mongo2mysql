@@ -16,6 +16,8 @@ class DumpResult {
 
     private $success = true;
 
+    private $hasFieldSpec = false;
+
     private $rowCount = 0;
 
     private $entityName;
@@ -52,6 +54,22 @@ class DumpResult {
     public function setSuccess($success)
     {
         $this->success = $success;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isHasFieldSpec(): bool
+    {
+        return $this->hasFieldSpec;
+    }
+
+    /**
+     * @param bool $hasFieldSpec
+     */
+    public function setHasFieldSpec(bool $hasFieldSpec): void
+    {
+        $this->hasFieldSpec = $hasFieldSpec;
     }
 
 	/**

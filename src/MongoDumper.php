@@ -203,6 +203,7 @@ class MongoDumper {
         $fieldSpecCollectionName = $this->collectionName . 'FieldSpec';
         if ($this->client->{$this->databaseName}->selectCollection($fieldSpecCollectionName)->count() > 0) {
             $this->determineSchemaFieldsByFieldSpec($fieldSpecCollectionName);
+            $dumpResult->setHasFieldSpec(true);
         } else {
             $this->determineSchemaFieldsBySampleSize();
         }
@@ -379,6 +380,13 @@ class MongoDumper {
                 // clean dollar sign
 				$propertyName = str_replace('$', '_', $propertyName);
 
+                if ($value === true) {
+                    $value = 1;
+                }
+                if ($value === false) {
+                    $value = 0;
+                }
+
                 $flatRecord[$propertyName] = $value;
             }
         }
@@ -397,7 +405,7 @@ class MongoDumper {
      * @param array $limit
      * @return \MongoDB\Driver\Cursor|\Traversable
      */
-    private function getMongoIterator(array $selectFilter = [], $limit = []) {
+    private function getMongoIterator(array $selectFilter = [], ?int $limit = null) {
         if (is_null($this->pipelineFile)) {
             $options = [];
             if (is_numeric($limit)) {
@@ -408,7 +416,7 @@ class MongoDumper {
                 $options['projection'] = $this->projection;
             }
 
-            return $this->collection->find($selectFilter, $limit);
+            return $this->collection->find($selectFilter, $options);
         }
 
         $pipeline = json_decode(
@@ -524,9 +532,7 @@ class MongoDumper {
             $this->fields[] = $field['field'];
 
             $thisFieldLength = 0;
-            if (!isset($field['length'])) {
-                $this->logger->warn('No length property on field', ['field' => $field]);
-            } else {
+            if (isset($field['length'])) {
                 $this->fieldLengths[$field['field']] = $field['length'];
                 $thisFieldLength = $field['length'];
             }
@@ -559,7 +565,7 @@ class MongoDumper {
             }
 
             // add projection
-            $this->projection[] = [$field['path'] => 1];
+            $this->projection[$field['path']] = 1;
         }
     }
 }

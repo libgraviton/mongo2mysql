@@ -2,15 +2,10 @@
 namespace Graviton\Mongo2Mysql;
 
 use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Platforms\MySqlPlatform;
 use Doctrine\DBAL\Schema\Schema;
-use Graviton\Mongo2Mysql\Db\CompilerGetter;
 use Graviton\Mongo2Mysql\Model\DumpResult;
 use Graviton\Mongo2Mysql\Util\MetaLogger;
 use Monolog\Logger;
-use Opis\Database\Connection;
-use Opis\Database\Database;
-use Opis\Database\Schema\CreateTable;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -53,43 +48,21 @@ class PdoImporter {
 	 */
     private $connection;
 
-    private $compiler;
-
     /**
      * @var Filesystem
      */
     private $fs;
 
-    private $insertStack = [];
-    private $insertBulkSize;
     private $insertCounter = 0;
 	private $insertCounterError = 0;
 
-    /**
-     * @var bool
-     */
-	private $isSqlServer = false;
-	private $stringFieldLimit = 3000;
-
-    public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword, $insertBulkSize)
+    public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword)
     {
         $this->logger = $logger;
         $this->dsn = $dsn;
         $this->mysqlUser = $mysqlUser;
         $this->mysqlPassword = $mysqlPassword;
         $this->fs = new Filesystem();
-        $this->insertBulkSize = (int) $insertBulkSize;
-    }
-
-    /**
-     * set StringFieldLimit
-     *
-     * @param int $stringFieldLimit stringFieldLimit
-     *
-     * @return void
-     */
-    public function setStringFieldLimit($stringFieldLimit) {
-        $this->stringFieldLimit = $stringFieldLimit;
     }
 
     /**
@@ -120,16 +93,9 @@ class PdoImporter {
             ]
         );
 
-        $this->connection = Connection::fromPDO($this->pdo);
+        $this->connection = DriverManager::getConnection(['pdo' => $this->pdo]);
 
-        // sql server specifics
-        $this->isSqlServer = CompilerGetter::isSqlServer($this->connection);
-        if ($this->isSqlServer) {
-            $this->stringFieldLimit = 4000;
-        }
-
-        $this->compiler = CompilerGetter::getInstance($this->connection);
-        $this->metaLogger = new MetaLogger($this->logger, $this->connection);
+        $this->metaLogger = new MetaLogger($this->logger, $this->pdo);
         $this->metaLogger->setReportLoadId($this->reportLoadId);
 
         try {
@@ -137,12 +103,7 @@ class PdoImporter {
 			$this->metaLogger->start($dumpResult->getEntityName());
 
             $this->createTableSchema($dumpResult);
-
-            if (CompilerGetter::isMysql($this->connection)) {
-                $this->insertDataLoadDataInfile($dumpResult);
-            } else {
-                $this->importDataInsertStatement($dumpResult);
-            }
+            $this->insertDataLoadDataInfile($dumpResult);
 
 			$this->metaLogger->stop($dumpResult->getEntityName(), $this->insertCounter, $this->insertCounterError);
 
@@ -155,36 +116,25 @@ class PdoImporter {
 			);
         } catch (\Exception $e) {
             $this->logger->crit('Error in creating the target schema or importing data', ['exception' => $e]);
+        } finally {
+            $this->logger->info('Removing CSV File', ['filename' => $dumpResult->getDumpFile()]);
+            $this->fs->remove($dumpResult->getDumpFile());
         }
-
-        $this->logger->info('Removing CSV File', ['filename' => $dumpResult->getDumpFile()]);
-        $this->fs->remove($dumpResult->getDumpFile());
     }
 
     private function createTableSchema(DumpResult $dumpResult)
     {
         $connection = DriverManager::getConnection(['pdo' => $this->pdo]);
         $schemaManager = $connection->getSchemaManager();
-        $schema = new Schema();
 
         // drop if exists
         if ($schemaManager->createSchema()->hasTable($dumpResult->getEntityName())) {
             $this->logger->info('Dropping target table', ['tableName' => $dumpResult->getEntityName()]);
-            $schemaManager->createSchema()->dropTable($dumpResult->getEntityName());
+            $schemaManager->dropTable($dumpResult->getEntityName());
         }
 
+        $schema = new Schema();
         $table = $schema->createTable($dumpResult->getEntityName());
-
-        /*
-        try {
-            $database->schema()->drop($dumpResult->getEntityName());
-        } catch (\Exception $e) {
-            $this->logger->warn(
-                'Could not drop table, maybe it does not exist',
-                ['tableName' => $dumpResult->getEntityName()]
-            );
-        }
-        */
 
         $fieldLengths = $dumpResult->getFieldLengths();
         $fieldTypes = $dumpResult->getFieldTypes();
@@ -199,8 +149,12 @@ class PdoImporter {
             $options = [];
 
             if (isset($fieldLengths[$fieldName])) {
-                // give some room -> don't do this if fieldspec is given!
-                $options['length'] = ((int) $fieldLengths[$fieldName]); //* 2;
+                $options['length'] = ((int) $fieldLengths[$fieldName]);;
+
+                if (!$dumpResult->isHasFieldSpec()) {
+                    // double if no field spec
+                    $options['length'] = $options['length'] * 2;
+                }
             }
 
             $options['notnull'] = true;
@@ -217,6 +171,14 @@ class PdoImporter {
 
         if (!empty($dumpResult->getFieldsPrimary())) {
             $table->setPrimaryKey(array_keys($dumpResult->getFieldsPrimary()));
+        } else {
+            // set on _id/id if exists
+            if (in_array('_id', $dumpResult->getFields())) {
+                $table->setPrimaryKey(['_id']);
+            }
+            if (in_array('id', $dumpResult->getFields())) {
+                $table->setPrimaryKey(['id']);
+            }
         }
 
         // migrate to this schema
@@ -224,104 +186,9 @@ class PdoImporter {
             $this->pdo->query($query);
         }
 
-
-        // has index?
-        /*
-        $primarySet = false;
-        if (in_array('_id', $dumpResult->getFields())) {
-            $creater->string('_id')->notNull();
-            $creater->primary('_id');
-            $primarySet = true;
-        }
-        if (in_array('id', $dumpResult->getFields())) {
-            if (!$primarySet) {
-                $creater->string('id')->notNull();
-                $creater->primary('id');
-            } else {
-                $creater->string('id');
-            }
-        }
-
-        $creater->engine('InnoDB');
-        */
+        $table->addOption('engine', 'InnoDB');
 
         $this->logger->info('Created table as derived from schema', ['tableName' => $dumpResult->getEntityName()]);
-    }
-
-    private function importDataInsertStatement(DumpResult $dumpResult)
-    {
-        $fp = fopen($dumpResult->getDumpFile(), 'r+');
-        $fieldNames = $dumpResult->getFields();
-
-        $this->logger->info('Starting to execute INSERT queries...');
-
-        while (($data = fgetcsv($fp)) !== false) {
-            $row = array_combine(
-                $fieldNames,
-                $data
-            );
-
-            $this->insertRecord($dumpResult, $row);
-        }
-
-        // flush again
-		$this->flushBulk($dumpResult);
-
-        fclose($fp);
-    }
-
-    private function insertRecord(DumpResult $dumpResult, $record)
-    {
-        $this->insertStack[] = $record;
-
-        if (count($this->insertStack) >= $this->insertBulkSize) {
-            $this->flushBulk($dumpResult);
-        }
-    }
-
-    private function flushBulk(DumpResult $dumpResult)
-    {
-        if (empty($this->insertStack)) {
-            return;
-        }
-
-        $rowCount = count($this->insertStack);
-
-        $sql = 'INSERT INTO '.$this->compiler->wrap($dumpResult->getEntityName());
-        $fields = $this->quoteArray($dumpResult->getFields(), false);
-
-        // field list
-        $sql .= ' ('.implode(',', $fields).')';
-
-        // values
-		$rows = [];
-		foreach ($this->insertStack as $row) {
-			$rows[] = implode(',', $this->quoteArray($row));
-		}
-
-		$sql .= ' VALUES ('.implode('),(', $rows).')';
-
-		try {
-			$this->pdo->query($sql);
-			$this->insertCounter += $rowCount;
-		} catch (\Exception $e) {
-			echo $sql.PHP_EOL;
-			$this->logger->error('SQL INSERT error', ['e' => $e]);
-			$this->insertCounterError += $rowCount;
-		}
-
-		$this->logger->info(
-			'Flushed bulk stack',
-			[
-				'totalCount' => $dumpResult->getRowCount(),
-				'rowCount' => $rowCount,
-				'currentCount' => ($this->insertCounter + $this->insertCounterError),
-				'progress' => round((100/$dumpResult->getRowCount()) * ($this->insertCounter + $this->insertCounterError),2).'%'
-			]
-		);
-
-		// empty stack
-        $this->insertStack = [];
     }
 
     private function insertDataLoadDataInfile(DumpResult $dumpResult) {
@@ -340,16 +207,4 @@ class PdoImporter {
 
         $this->insertCounter = $dumpResult->getRowCount();
     }
-
-    private function quoteArray($array, $isData = true) {
-    	return array_map(function($value) use ($isData) {
-    		if ($value == 'NULL') {
-    			return 'null';
-			}
-			if ($isData) {
-				return $this->compiler->quote($value);
-			}
-    		return $this->compiler->wrap($value);
-		}, $array);
-	}
 }
