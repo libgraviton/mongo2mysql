@@ -20,7 +20,8 @@ class Logger
      */
     public static function getLogger(OutputInterface $output, $name)
     {
-		$formatter = new LineFormatter(null, \DateTime::ISO8601);
+        $format = "[%datetime%] %level_name%: %message% %context%\n";
+		$formatter = new LineFormatter($format, \DateTime::ISO8601);
 		$handler = new ConsoleHandler($output);
 		$handler->setFormatter($formatter);
 
