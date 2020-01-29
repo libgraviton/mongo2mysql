@@ -69,7 +69,7 @@ class ImportCommand extends Command
                         ),
                         new InputArgument(
                             'targetMysqlPassword',
-                            InputArgument::REQUIRED,
+                            InputArgument::OPTIONAL,
                             'MySQL password'
                         ),
                         new InputOption(
@@ -186,5 +186,7 @@ class ImportCommand extends Command
             $importer->setReportLoadId($input->getOption('reportLoadId'));
         }
         $importer->import($dumpResult);
+
+        return 0;
     }
 }
