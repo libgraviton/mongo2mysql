@@ -69,7 +69,7 @@ class ImportCommand extends Command
                         ),
                         new InputArgument(
                             'targetMysqlPassword',
-                            InputArgument::REQUIRED,
+                            InputArgument::OPTIONAL,
                             'MySQL password'
                         ),
                         new InputOption(
