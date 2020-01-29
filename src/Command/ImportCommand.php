@@ -186,5 +186,7 @@ class ImportCommand extends Command
             $importer->setReportLoadId($input->getOption('reportLoadId'));
         }
         $importer->import($dumpResult);
+
+        return 0;
     }
 }
