@@ -99,6 +99,13 @@ class MongoDumper {
     private $fields = [];
 
     /**
+     * array of paths to an alternative field value expression
+     *
+     * @var array
+     */
+    private $fieldPaths = [];
+
+    /**
      * array of fieldtypes
      *
      * @var array
@@ -240,8 +247,14 @@ class MongoDumper {
             $thisRecord = [];
 
             foreach ($this->fields as $fieldName) {
-                if (isset($flatRecord[$fieldName]) && !is_null($flatRecord[$fieldName])) {
-                    $thisRecord[] = $this->convertValue($flatRecord[$fieldName]);
+                // alternative field value path?
+                $fieldValueSelector = $fieldName;
+                if (isset($this->fieldPaths[$fieldName])) {
+                    $fieldValueSelector = $this->fieldPaths[$fieldName];
+                }
+
+                if (isset($flatRecord[$fieldValueSelector]) && !is_null($flatRecord[$fieldValueSelector])) {
+                    $thisRecord[] = $this->convertValue($flatRecord[$fieldValueSelector]);
                 } else {
                     $thisRecord[] = 'NULL';
                 }
@@ -564,8 +577,11 @@ class MongoDumper {
                 $this->fieldPrimary[$field['field']] = true;
             }
 
-            // add projection
-            $this->projection[$field['path']] = 1;
+            // add projection and alternative field path
+            if (isset($field['path'])) {
+                $this->projection[$field['path']] = 1;
+                $this->fieldPaths[$field['field']] = str_replace('.', '_', $field['path']);
+            }
         }
     }
 }
