@@ -3,7 +3,7 @@
     "description": "Script that transport MongoDB collections to MySQL/MariaDB tables",
     "type": "project",
     "require": {
-        "php": ">=7.3.0",
+        "php": ">=7.4.0",
         "mongodb/mongodb": "~1",
         "symfony/console": "~5",
         "symfony/filesystem": "~5",
