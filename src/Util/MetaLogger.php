@@ -160,10 +160,10 @@ class MetaLogger
                 $table->addColumn('element_name', Types::STRING);
             }
             if (!$table->hasColumn('started_at')) {
-                $table->addColumn('started_at', Types::DATETIME);
+                $table->addColumn('started_at', Types::DATETIME_MUTABLE);
             }
             if (!$table->hasColumn('finished_at')) {
-                $table->addColumn('finished_at', Types::DATETIME)->setNotnull(false);
+                $table->addColumn('finished_at', Types::DATETIME_MUTABLE)->setNotnull(false);
             }
             if (!$table->hasColumn('record_count')) {
                 $table->addColumn('record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
