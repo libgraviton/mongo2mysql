@@ -7,6 +7,7 @@ namespace Graviton\Mongo2Mysql\Command;
 use Graviton\Mongo2Mysql\PdoImporter;
 use Graviton\Mongo2Mysql\MongoDumper;
 use Graviton\Mongo2Mysql\Util\Logger;
+use Graviton\Mongo2Mysql\Util\MetaLogger;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
@@ -147,6 +148,29 @@ class ImportCommand extends Command
         $output->setVerbosity(OutputInterface::VERBOSITY_VERY_VERBOSE);
         $logger = Logger::getLogger($output, 'mysql2mongo');
 
+        $pdo = new \PDO(
+            $input->getArgument('targetMysqlDsn'),
+            $input->getArgument('targetMysqlUser'),
+            $input->getArgument('targetMysqlPassword'),
+            [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
+            ]
+        );
+
+        $entityName = $input->getArgument('sourceMongoCollection');
+        if (!is_null($input->getOption('targetTableName'))) {
+            $entityName = $input->getOption('targetTableName');
+        }
+
+        $metaLogger = new MetaLogger($logger, $pdo);
+        if (!is_null($input->getOption('reportLoadId'))) {
+            $metaLogger->setReportLoadId($input->getOption('reportLoadId'));
+        }
+
+        // start entity...
+        $metaLogger->start($entityName);
+
         $dumper = new MongoDumper(
             $logger,
             $input->getArgument('sourceMongoDsn'),
@@ -170,22 +194,17 @@ class ImportCommand extends Command
         }
 
         $dumpResult = $dumper->dump();
-
-        $targetTableName = $input->getOption('targetTableName');
-        if (!is_null($targetTableName)) {
-        	$dumpResult->setEntityName($targetTableName);
-		}
+        $dumpResult->setEntityName($entityName);
 
         $importer = new PdoImporter(
             $logger,
-            $input->getArgument('targetMysqlDsn'),
-            $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword')
+            $pdo
         );
-        if (!is_null($input->getOption('reportLoadId'))) {
-            $importer->setReportLoadId($input->getOption('reportLoadId'));
-        }
-        $importer->import($dumpResult);
+        $importResult = $importer->import($dumpResult);
+
+        var_dump($importResult);
+
+        $metaLogger->stop($entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
 
         return 0;
     }

@@ -4,7 +4,7 @@ namespace Graviton\Mongo2Mysql\Util;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Types\Type;
+use Doctrine\DBAL\Types\Types;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -86,7 +86,7 @@ class MetaLogger
                 ->select(['max(id)'])
                 ->from($this->tableName)
                 ->execute();
-		    $row = $sql->fetch(\PDO::FETCH_BOTH);
+		    $row = $sql->fetchNumeric();
 
 			if (isset($row[0])) {
 				$this->recordId = $row[0];
@@ -147,30 +147,36 @@ class MetaLogger
             }
 
 		    if (!$table->hasColumn('id')) {
-		        $col = $table->addColumn('id', Type::INTEGER);
+		        $col = $table->addColumn('id', Types::INTEGER);
                 $col->setAutoincrement(true);
                 $table->setPrimaryKey(['id']);
             }
 
             if (!$table->hasColumn('element_name')) {
-                $table->addColumn('element_name', Type::STRING);
+                $table->addColumn('element_name', Types::STRING);
             }
             if (!$table->hasColumn('started_at')) {
-                $table->addColumn('started_at', Type::DATETIME);
+                $table->addColumn('started_at', Types::DATETIME);
             }
             if (!$table->hasColumn('finished_at')) {
-                $table->addColumn('finished_at', Type::DATETIME)->setNotnull(false);
+                $table->addColumn('finished_at', Types::DATETIME)->setNotnull(false);
             }
             if (!$table->hasColumn('record_count')) {
-                $table->addColumn('record_count', Type::INTEGER)->setDefault(0)->setNotnull(false);
+                $table->addColumn('record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
             }
             if (!$table->hasColumn('error_record_count')) {
-                $table->addColumn('error_record_count', Type::INTEGER)->setDefault(0)->setNotnull(false);
+                $table->addColumn('error_record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
+            }
+            if (!$table->hasColumn('errored')) {
+                $table->addColumn('errored', Types::BOOLEAN)->setDefault(false);
+            }
+            if (!$table->hasColumn('error_exception')) {
+                $table->addColumn('error_exception', Types::STRING)->setNotnull(false);
             }
 
             $migrations = $schema->getMigrateToSql($newSchema, $schemaManager->getDatabasePlatform());
             foreach ($migrations as $migration) {
-                $this->db->exec($migration);
+                $this->db->executeStatement($migration);
             }
 		} catch (\Exception $e) {
 		    $message = $e->getMessage();

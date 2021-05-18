@@ -5,7 +5,6 @@ use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
 use Graviton\Mongo2Mysql\Model\DumpResult;
 use Graviton\Mongo2Mysql\Model\ImportResult;
-use Graviton\Mongo2Mysql\Util\MetaLogger;
 use Monolog\Logger;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -20,11 +19,6 @@ class PdoImporter {
      * @var Logger
      */
     private $logger;
-
-	/**
-	 * @var MetaLogger
-	 */
-    private $metaLogger;
 
     /**
      * @var \PDO
