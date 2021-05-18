@@ -171,40 +171,43 @@ class ImportCommand extends Command
         // start entity...
         $metaLogger->start($entityName);
 
-        $dumper = new MongoDumper(
-            $logger,
-            $input->getArgument('sourceMongoDsn'),
-            $input->getArgument('sourceMongoDb'),
-            $input->getArgument('sourceMongoCollection'),
-            $input->getOption('tempDir'),
-			$input->getOption('mongoFilter')
-        );
-        $dumper->setTimezone($input->getOption('tz'));
-        $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
+        try {
+            $dumper = new MongoDumper(
+                $logger,
+                $input->getArgument('sourceMongoDsn'),
+                $input->getArgument('sourceMongoDb'),
+                $input->getArgument('sourceMongoCollection'),
+                $input->getOption('tempDir'),
+                $input->getOption('mongoFilter')
+            );
+            $dumper->setTimezone($input->getOption('tz'));
+            $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
 
-        // pipeline file?
-        if (!is_null($input->getOption('sourceMongoPipelineFile'))) {
-            $pipelineFile = $input->getOption('sourceMongoPipelineFile');
+            // pipeline file?
+            if (!is_null($input->getOption('sourceMongoPipelineFile'))) {
+                $pipelineFile = $input->getOption('sourceMongoPipelineFile');
 
-            if (!(new Filesystem())->exists($pipelineFile)) {
-                throw new \LogicException('File '.$pipelineFile.' does not exist!');
+                if (!(new Filesystem())->exists($pipelineFile)) {
+                    throw new \LogicException('File ' . $pipelineFile . ' does not exist!');
+                }
+
+                $dumper->setPipelineFile($pipelineFile);
             }
 
-            $dumper->setPipelineFile($pipelineFile);
+            $dumpResult = $dumper->dump();
+            $dumpResult->setEntityName($entityName);
+
+            $importer = new PdoImporter(
+                $logger,
+                $pdo
+            );
+            $importResult = $importer->import($dumpResult);
+
+            $metaLogger->stop($entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
+        } catch (\Exception $e) {
+            $metaLogger->stop($entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
+            $logger->critical('Exception happened during execution', ['e' => $e]);
         }
-
-        $dumpResult = $dumper->dump();
-        $dumpResult->setEntityName($entityName);
-
-        $importer = new PdoImporter(
-            $logger,
-            $pdo
-        );
-        $importResult = $importer->import($dumpResult);
-
-        var_dump($importResult);
-
-        $metaLogger->stop($entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
 
         return 0;
     }
