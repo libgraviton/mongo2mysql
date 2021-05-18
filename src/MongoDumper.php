@@ -5,6 +5,7 @@ use Graviton\Mongo2Mysql\Model\DumpResult;
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\Client;
 use MongoDB\Collection;
+use MongoDB\Driver\ReadPreference;
 use MongoDB\Model\BSONArray;
 use MongoDB\Model\BSONDocument;
 use Monolog\Logger;
@@ -419,6 +420,8 @@ class MongoDumper {
      * @return \MongoDB\Driver\Cursor|\Traversable
      */
     private function getMongoIterator(array $selectFilter = [], ?int $limit = null) {
+        $readPreference = new ReadPreference(ReadPreference::RP_SECONDARY_PREFERRED);
+
         if (is_null($this->pipelineFile)) {
             $options = [];
             if (is_numeric($limit)) {
@@ -428,6 +431,8 @@ class MongoDumper {
             if (!empty($this->projection)) {
                 $options['projection'] = $this->projection;
             }
+
+            $options['readPreference'] = $readPreference;
 
             return $this->collection->find($selectFilter, $options);
         }
@@ -452,7 +457,7 @@ class MongoDumper {
             ]
         );
 
-        return $this->collection->aggregate($pipeline);
+        return $this->collection->aggregate($pipeline, ['readPreference' => $readPreference]);
     }
 
     /**
