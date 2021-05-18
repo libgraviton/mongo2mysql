@@ -7,6 +7,7 @@ namespace Graviton\Mongo2Mysql\Command;
 use Graviton\Mongo2Mysql\PdoImporter;
 use Graviton\Mongo2Mysql\MongoDumper;
 use Graviton\Mongo2Mysql\Util\Logger;
+use Graviton\Mongo2Mysql\Util\MetaLogger;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
@@ -147,45 +148,66 @@ class ImportCommand extends Command
         $output->setVerbosity(OutputInterface::VERBOSITY_VERY_VERBOSE);
         $logger = Logger::getLogger($output, 'mysql2mongo');
 
-        $dumper = new MongoDumper(
-            $logger,
-            $input->getArgument('sourceMongoDsn'),
-            $input->getArgument('sourceMongoDb'),
-            $input->getArgument('sourceMongoCollection'),
-            $input->getOption('tempDir'),
-			$input->getOption('mongoFilter')
-        );
-        $dumper->setTimezone($input->getOption('tz'));
-        $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
-
-        // pipeline file?
-        if (!is_null($input->getOption('sourceMongoPipelineFile'))) {
-            $pipelineFile = $input->getOption('sourceMongoPipelineFile');
-
-            if (!(new Filesystem())->exists($pipelineFile)) {
-                throw new \LogicException('File '.$pipelineFile.' does not exist!');
-            }
-
-            $dumper->setPipelineFile($pipelineFile);
-        }
-
-        $dumpResult = $dumper->dump();
-
-        $targetTableName = $input->getOption('targetTableName');
-        if (!is_null($targetTableName)) {
-        	$dumpResult->setEntityName($targetTableName);
-		}
-
-        $importer = new PdoImporter(
-            $logger,
+        $pdo = new \PDO(
             $input->getArgument('targetMysqlDsn'),
             $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword')
+            $input->getArgument('targetMysqlPassword'),
+            [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
+            ]
         );
-        if (!is_null($input->getOption('reportLoadId'))) {
-            $importer->setReportLoadId($input->getOption('reportLoadId'));
+
+        $entityName = $input->getArgument('sourceMongoCollection');
+        if (!is_null($input->getOption('targetTableName'))) {
+            $entityName = $input->getOption('targetTableName');
         }
-        $importer->import($dumpResult);
+
+        $metaLogger = new MetaLogger($logger, $pdo);
+        if (!is_null($input->getOption('reportLoadId'))) {
+            $metaLogger->setReportLoadId($input->getOption('reportLoadId'));
+        }
+
+        // start entity...
+        $metaLogger->start($entityName);
+
+        try {
+            $dumper = new MongoDumper(
+                $logger,
+                $input->getArgument('sourceMongoDsn'),
+                $input->getArgument('sourceMongoDb'),
+                $input->getArgument('sourceMongoCollection'),
+                $input->getOption('tempDir'),
+                $input->getOption('mongoFilter')
+            );
+            $dumper->setTimezone($input->getOption('tz'));
+            $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
+
+            // pipeline file?
+            if (!is_null($input->getOption('sourceMongoPipelineFile'))) {
+                $pipelineFile = $input->getOption('sourceMongoPipelineFile');
+
+                if (!(new Filesystem())->exists($pipelineFile)) {
+                    throw new \LogicException('File ' . $pipelineFile . ' does not exist!');
+                }
+
+                $dumper->setPipelineFile($pipelineFile);
+            }
+
+            $dumpResult = $dumper->dump();
+            $dumpResult->setEntityName($entityName);
+
+            $importer = new PdoImporter(
+                $logger,
+                $pdo
+            );
+            $importResult = $importer->import($dumpResult);
+
+            $metaLogger->stop($entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
+        } catch (\Exception $e) {
+            $metaLogger->stop($entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
+            $logger->critical('Exception happened during execution', ['e' => $e]);
+        }
 
         return 0;
     }

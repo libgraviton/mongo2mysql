@@ -4,7 +4,7 @@ namespace Graviton\Mongo2Mysql\Util;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Types\Type;
+use Doctrine\DBAL\Types\Types;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -86,7 +86,7 @@ class MetaLogger
                 ->select(['max(id)'])
                 ->from($this->tableName)
                 ->execute();
-		    $row = $sql->fetch(\PDO::FETCH_BOTH);
+		    $row = $sql->fetchNumeric();
 
 			if (isset($row[0])) {
 				$this->recordId = $row[0];
@@ -94,22 +94,24 @@ class MetaLogger
 
 			$this->logger->info('Inserted metadata entry.', ['data' => $insertData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
-			$this->logger->warn('Error creating metadata entry', ['e' => $e]);
+			$this->logger->warning('Error creating metadata entry', ['e' => $e]);
 		}
 	}
 
-	public function stop($elementName, $recordCount, $errorRecordCount)
+	public function stop($elementName, $recordCount, $errorRecordCount, int $errored = 0, ?string $exception = null)
 	{
 		try {
 		    $endTime = (new \DateTime())->format($this->dateFormat);
 
 		    // local file report
-            $this->localFileReport($elementName, null, $endTime, $recordCount, $errorRecordCount);
+            $this->localFileReport($elementName, null, $endTime, $recordCount, $errorRecordCount, $errored, $exception);
 
 		    $updateData = [
                 'finished_at' => $endTime,
                 'record_count' => $recordCount,
-                'error_record_count' => $errorRecordCount
+                'error_record_count' => $errorRecordCount,
+                'errored' => $errored,
+                'error_exception' => $exception
             ];
 
 		    $this->db
@@ -118,6 +120,8 @@ class MetaLogger
                 ->set('finished_at', '?')
                 ->set('record_count', '?')
                 ->set('error_record_count', '?')
+                ->set('errored', '?')
+                ->set('error_exception', '?')
                 ->where('id = ?')
                 ->setParameters(
                     array_merge(
@@ -129,7 +133,7 @@ class MetaLogger
 
             $this->logger->info('Updated metadata entry.', ['data' => $updateData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
-			$this->logger->warn('Error updating metadata entry', ['e' => $e]);
+			$this->logger->warning('Error updating metadata entry', ['e' => $e]);
 		}
 	}
 
@@ -147,40 +151,46 @@ class MetaLogger
             }
 
 		    if (!$table->hasColumn('id')) {
-		        $col = $table->addColumn('id', Type::INTEGER);
+		        $col = $table->addColumn('id', Types::INTEGER);
                 $col->setAutoincrement(true);
                 $table->setPrimaryKey(['id']);
             }
 
             if (!$table->hasColumn('element_name')) {
-                $table->addColumn('element_name', Type::STRING);
+                $table->addColumn('element_name', Types::STRING);
             }
             if (!$table->hasColumn('started_at')) {
-                $table->addColumn('started_at', Type::DATETIME);
+                $table->addColumn('started_at', Types::DATETIME_MUTABLE);
             }
             if (!$table->hasColumn('finished_at')) {
-                $table->addColumn('finished_at', Type::DATETIME)->setNotnull(false);
+                $table->addColumn('finished_at', Types::DATETIME_MUTABLE)->setNotnull(false);
             }
             if (!$table->hasColumn('record_count')) {
-                $table->addColumn('record_count', Type::INTEGER)->setDefault(0)->setNotnull(false);
+                $table->addColumn('record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
             }
             if (!$table->hasColumn('error_record_count')) {
-                $table->addColumn('error_record_count', Type::INTEGER)->setDefault(0)->setNotnull(false);
+                $table->addColumn('error_record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
+            }
+            if (!$table->hasColumn('errored')) {
+                $table->addColumn('errored', Types::BOOLEAN)->setDefault(false);
+            }
+            if (!$table->hasColumn('error_exception')) {
+                $table->addColumn('error_exception', Types::STRING)->setNotnull(false);
             }
 
             $migrations = $schema->getMigrateToSql($newSchema, $schemaManager->getDatabasePlatform());
             foreach ($migrations as $migration) {
-                $this->db->exec($migration);
+                $this->db->executeStatement($migration);
             }
 		} catch (\Exception $e) {
 		    $message = $e->getMessage();
 		    if (strpos($message, 'already exists') == false) {
-                $this->logger->warn('Error creating metadata table', ['e' => $e]);
+                $this->logger->warning('Error creating metadata table', ['e' => $e]);
             }
 		}
 	}
 
-	private function localFileReport($elementName, $startTime = null, $endTime = null, $recordCount = null, $errorRecordCount = null)
+	private function localFileReport($elementName, $startTime = null, $endTime = null, $recordCount = null, $errorRecordCount = null, $errored = 0, $exception = null)
     {
         $reportFile = $this->getReportLoadIdFile();
         if (is_null($reportFile)) {
@@ -212,6 +222,12 @@ class MetaLogger
         }
         if (!is_null($errorRecordCount)) {
             $elementData['errorRecordCount'] = $errorRecordCount;
+        }
+        if (!is_null($errored)) {
+            $elementData['errored'] = $errored;
+        }
+        if (!is_null($exception)) {
+            $elementData['exception'] = $exception;
         }
 
         $baseData[$elementName] = $elementData;

@@ -4,7 +4,7 @@ namespace Graviton\Mongo2Mysql;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\Schema;
 use Graviton\Mongo2Mysql\Model\DumpResult;
-use Graviton\Mongo2Mysql\Util\MetaLogger;
+use Graviton\Mongo2Mysql\Model\ImportResult;
 use Monolog\Logger;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -19,24 +19,6 @@ class PdoImporter {
      * @var Logger
      */
     private $logger;
-
-	/**
-	 * @var MetaLogger
-	 */
-    private $metaLogger;
-
-    private $reportLoadId;
-
-    /**
-     * PDO DSN
-     *
-     * @var string
-     */
-    private $dsn;
-
-    private $mysqlUser;
-
-    private $mysqlPassword;
 
     /**
      * @var \PDO
@@ -56,24 +38,11 @@ class PdoImporter {
     private $insertCounter = 0;
 	private $insertCounterError = 0;
 
-    public function __construct(Logger $logger, $dsn, $mysqlUser, $mysqlPassword)
+    public function __construct(Logger $logger, \PDO $pdo)
     {
         $this->logger = $logger;
-        $this->dsn = $dsn;
-        $this->mysqlUser = $mysqlUser;
-        $this->mysqlPassword = $mysqlPassword;
+        $this->pdo = $pdo;
         $this->fs = new Filesystem();
-    }
-
-    /**
-     * set ReportLoadId
-     *
-     * @param mixed $reportLoadId reportLoadId
-     *
-     * @return void
-     */
-    public function setReportLoadId($reportLoadId) {
-        $this->reportLoadId = $reportLoadId;
     }
 
     /**
@@ -81,31 +50,18 @@ class PdoImporter {
      *
      * @return DumpResult result
      */
-    public function import(DumpResult $dumpResult)
+    public function import(DumpResult $dumpResult) : ImportResult
     {
-        $this->pdo = new \PDO(
-            $this->dsn,
-            $this->mysqlUser,
-            $this->mysqlPassword,
-            [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
-            ]
-        );
-
         $this->connection = DriverManager::getConnection(['pdo' => $this->pdo]);
 
-        $this->metaLogger = new MetaLogger($this->logger, $this->pdo);
-        $this->metaLogger->setReportLoadId($this->reportLoadId);
+        $this->insertCounter = 0;
+        $this->insertCounterError = 0;
 
         try {
             $this->logger->info('Creating target PDO table', ['name' => $dumpResult->getEntityName()]);
-			$this->metaLogger->start($dumpResult->getEntityName());
 
             $this->createTableSchema($dumpResult);
             $this->insertDataLoadDataInfile($dumpResult);
-
-			$this->metaLogger->stop($dumpResult->getEntityName(), $this->insertCounter, $this->insertCounterError);
 
 			$this->logger->info(
 				'Finished PDO import',
@@ -115,11 +71,18 @@ class PdoImporter {
 				]
 			);
         } catch (\Exception $e) {
-            $this->logger->crit('Error in creating the target schema or importing data', ['exception' => $e]);
+            $this->logger->critical('Error in creating the target schema or importing data', ['exception' => $e]);
+            throw $e;
         } finally {
             $this->logger->info('Removing CSV File', ['filename' => $dumpResult->getDumpFile()]);
             $this->fs->remove($dumpResult->getDumpFile());
         }
+
+        $result = new ImportResult();
+        $result->setInsertCounter($this->insertCounter);
+        $result->setInsertCounterError($this->insertCounterError);
+
+        return $result;
     }
 
     private function createTableSchema(DumpResult $dumpResult)
@@ -138,6 +101,7 @@ class PdoImporter {
 
         $fieldLengths = $dumpResult->getFieldLengths();
         $fieldTypes = $dumpResult->getFieldTypes();
+        $fieldNullable = $dumpResult->getFieldNullables();
 
         foreach ($dumpResult->getFields() as $fieldName) {
             if (isset($fieldTypes[$fieldName])) {
@@ -158,7 +122,7 @@ class PdoImporter {
             }
 
             $options['notnull'] = true;
-            if ($dumpResult->getFieldNullables()[$fieldName] == true) {
+            if (in_array($fieldName, $fieldNullable)) {
                 $options['notnull'] = false;
             }
 
@@ -203,8 +167,12 @@ class PdoImporter {
         $this->logger->info('LOAD DATA INFILE capable target recognized, using that method..');
         $this->logger->info('Starting import query', ['query' => $query]);
 
-        $this->pdo->query($query);
+        $res = $this->pdo->query($query);
 
-        $this->insertCounter = $dumpResult->getRowCount();
+        if ($res == false) {
+            throw new \RuntimeException('Was unable to do LOAD DATA LOCAL INFILE');
+        }
+
+        $this->insertCounter = $res->rowCount();
     }
 }
