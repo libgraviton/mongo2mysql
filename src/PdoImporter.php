@@ -63,8 +63,6 @@ class PdoImporter {
             $this->createTableSchema($dumpResult);
             $this->insertDataLoadDataInfile($dumpResult);
 
-            //throw new \RuntimeException('dude');
-
 			$this->logger->info(
 				'Finished PDO import',
 				[
