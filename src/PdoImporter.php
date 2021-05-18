@@ -138,6 +138,7 @@ class PdoImporter {
 
         $fieldLengths = $dumpResult->getFieldLengths();
         $fieldTypes = $dumpResult->getFieldTypes();
+        $fieldNullable = $dumpResult->getFieldNullables();
 
         foreach ($dumpResult->getFields() as $fieldName) {
             if (isset($fieldTypes[$fieldName])) {
@@ -158,7 +159,7 @@ class PdoImporter {
             }
 
             $options['notnull'] = true;
-            if ($dumpResult->getFieldNullables()[$fieldName] == true) {
+            if (in_array($fieldName, $fieldNullable)) {
                 $options['notnull'] = false;
             }
 
