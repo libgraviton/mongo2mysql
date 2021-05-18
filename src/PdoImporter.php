@@ -115,7 +115,7 @@ class PdoImporter {
 				]
 			);
         } catch (\Exception $e) {
-            $this->logger->crit('Error in creating the target schema or importing data', ['exception' => $e]);
+            $this->logger->critical('Error in creating the target schema or importing data', ['exception' => $e]);
         } finally {
             $this->logger->info('Removing CSV File', ['filename' => $dumpResult->getDumpFile()]);
             $this->fs->remove($dumpResult->getDumpFile());
