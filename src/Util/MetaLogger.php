@@ -94,7 +94,7 @@ class MetaLogger
 
 			$this->logger->info('Inserted metadata entry.', ['data' => $insertData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
-			$this->logger->warn('Error creating metadata entry', ['e' => $e]);
+			$this->logger->warning('Error creating metadata entry', ['e' => $e]);
 		}
 	}
 
@@ -129,7 +129,7 @@ class MetaLogger
 
             $this->logger->info('Updated metadata entry.', ['data' => $updateData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
-			$this->logger->warn('Error updating metadata entry', ['e' => $e]);
+			$this->logger->warning('Error updating metadata entry', ['e' => $e]);
 		}
 	}
 
@@ -175,7 +175,7 @@ class MetaLogger
 		} catch (\Exception $e) {
 		    $message = $e->getMessage();
 		    if (strpos($message, 'already exists') == false) {
-                $this->logger->warn('Error creating metadata table', ['e' => $e]);
+                $this->logger->warning('Error creating metadata table', ['e' => $e]);
             }
 		}
 	}
