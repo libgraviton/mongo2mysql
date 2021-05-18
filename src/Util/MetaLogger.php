@@ -98,18 +98,20 @@ class MetaLogger
 		}
 	}
 
-	public function stop($elementName, $recordCount, $errorRecordCount)
+	public function stop($elementName, $recordCount, $errorRecordCount, int $errored = 0, ?string $exception = null)
 	{
 		try {
 		    $endTime = (new \DateTime())->format($this->dateFormat);
 
 		    // local file report
-            $this->localFileReport($elementName, null, $endTime, $recordCount, $errorRecordCount);
+            $this->localFileReport($elementName, null, $endTime, $recordCount, $errorRecordCount, $errored, $exception);
 
 		    $updateData = [
                 'finished_at' => $endTime,
                 'record_count' => $recordCount,
-                'error_record_count' => $errorRecordCount
+                'error_record_count' => $errorRecordCount,
+                'errored' => $errored,
+                'error_exception' => $exception
             ];
 
 		    $this->db
@@ -118,6 +120,8 @@ class MetaLogger
                 ->set('finished_at', '?')
                 ->set('record_count', '?')
                 ->set('error_record_count', '?')
+                ->set('errored', '?')
+                ->set('error_exception', '?')
                 ->where('id = ?')
                 ->setParameters(
                     array_merge(
@@ -186,7 +190,7 @@ class MetaLogger
 		}
 	}
 
-	private function localFileReport($elementName, $startTime = null, $endTime = null, $recordCount = null, $errorRecordCount = null)
+	private function localFileReport($elementName, $startTime = null, $endTime = null, $recordCount = null, $errorRecordCount = null, $errored = 0, $exception = null)
     {
         $reportFile = $this->getReportLoadIdFile();
         if (is_null($reportFile)) {
@@ -218,6 +222,12 @@ class MetaLogger
         }
         if (!is_null($errorRecordCount)) {
             $elementData['errorRecordCount'] = $errorRecordCount;
+        }
+        if (!is_null($errored)) {
+            $elementData['errored'] = $errored;
+        }
+        if (!is_null($exception)) {
+            $elementData['exception'] = $exception;
         }
 
         $baseData[$elementName] = $elementData;
