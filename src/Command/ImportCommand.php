@@ -148,22 +148,12 @@ class ImportCommand extends Command
         $output->setVerbosity(OutputInterface::VERBOSITY_VERY_VERBOSE);
         $logger = Logger::getLogger($output, 'mysql2mongo');
 
-        $pdo = new \PDO(
-            $input->getArgument('targetMysqlDsn'),
-            $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword'),
-            [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
-            ]
-        );
-
         $entityName = $input->getArgument('sourceMongoCollection');
         if (!is_null($input->getOption('targetTableName'))) {
             $entityName = $input->getOption('targetTableName');
         }
 
-        $metaLogger = new MetaLogger($logger, $pdo);
+        $metaLogger = new MetaLogger($logger, $this->getPdo($input));
         if (!is_null($input->getOption('reportLoadId'))) {
             $metaLogger->setReportLoadId($input->getOption('reportLoadId'));
         }
@@ -199,7 +189,7 @@ class ImportCommand extends Command
 
             $importer = new PdoImporter(
                 $logger,
-                $pdo
+                $this->getPdo($input)
             );
             $importResult = $importer->import($dumpResult);
 
@@ -210,5 +200,17 @@ class ImportCommand extends Command
         }
 
         return 0;
+    }
+
+    private function getPdo(InputInterface $input) {
+        return new \PDO(
+            $input->getArgument('targetMysqlDsn'),
+            $input->getArgument('targetMysqlUser'),
+            $input->getArgument('targetMysqlPassword'),
+            [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
+            ]
+        );
     }
 }
