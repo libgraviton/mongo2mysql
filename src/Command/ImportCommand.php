@@ -153,13 +153,13 @@ class ImportCommand extends Command
             $entityName = $input->getOption('targetTableName');
         }
 
-        $metaLogger = new MetaLogger($logger, $this->getPdo($input));
+        $metaLogger = new MetaLogger($logger);
         if (!is_null($input->getOption('reportLoadId'))) {
             $metaLogger->setReportLoadId($input->getOption('reportLoadId'));
         }
 
         // start entity...
-        $metaLogger->start($entityName);
+        $metaLogger->start($this->getPdo($input), $entityName);
 
         try {
             $dumper = new MongoDumper(
@@ -193,9 +193,9 @@ class ImportCommand extends Command
             );
             $importResult = $importer->import($dumpResult);
 
-            $metaLogger->stop($entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
+            $metaLogger->stop($this->getPdo($input), $entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
         } catch (\Exception $e) {
-            $metaLogger->stop($entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
+            $metaLogger->stop($this->getPdo($input), $entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
             $logger->critical('Exception happened during execution', ['e' => $e]);
         }
 
