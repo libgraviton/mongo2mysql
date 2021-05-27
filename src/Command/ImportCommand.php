@@ -148,28 +148,18 @@ class ImportCommand extends Command
         $output->setVerbosity(OutputInterface::VERBOSITY_VERY_VERBOSE);
         $logger = Logger::getLogger($output, 'mysql2mongo');
 
-        $pdo = new \PDO(
-            $input->getArgument('targetMysqlDsn'),
-            $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword'),
-            [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
-            ]
-        );
-
         $entityName = $input->getArgument('sourceMongoCollection');
         if (!is_null($input->getOption('targetTableName'))) {
             $entityName = $input->getOption('targetTableName');
         }
 
-        $metaLogger = new MetaLogger($logger, $pdo);
+        $metaLogger = new MetaLogger($logger);
         if (!is_null($input->getOption('reportLoadId'))) {
             $metaLogger->setReportLoadId($input->getOption('reportLoadId'));
         }
 
         // start entity...
-        $metaLogger->start($entityName);
+        $metaLogger->start($this->getPdo($input), $entityName);
 
         try {
             $dumper = new MongoDumper(
@@ -199,16 +189,28 @@ class ImportCommand extends Command
 
             $importer = new PdoImporter(
                 $logger,
-                $pdo
+                $this->getPdo($input)
             );
             $importResult = $importer->import($dumpResult);
 
-            $metaLogger->stop($entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
+            $metaLogger->stop($this->getPdo($input), $entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
         } catch (\Exception $e) {
-            $metaLogger->stop($entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
+            $metaLogger->stop($this->getPdo($input), $entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
             $logger->critical('Exception happened during execution', ['e' => $e]);
         }
 
         return 0;
+    }
+
+    private function getPdo(InputInterface $input) {
+        return new \PDO(
+            $input->getArgument('targetMysqlDsn'),
+            $input->getArgument('targetMysqlUser'),
+            $input->getArgument('targetMysqlPassword'),
+            [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
+            ]
+        );
     }
 }

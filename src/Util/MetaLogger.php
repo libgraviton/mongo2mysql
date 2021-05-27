@@ -38,9 +38,8 @@ class MetaLogger
 
 	private $reportLoadId;
 
-	public function __construct(\Monolog\Logger $logger, \PDO $pdo) {
+	public function __construct(\Monolog\Logger $logger) {
 		$this->logger = $logger;
-		$this->db = DriverManager::getConnection(['pdo' => $pdo]);
 		$this->fs = new Filesystem();
 	}
 
@@ -55,8 +54,10 @@ class MetaLogger
         $this->reportLoadId = $reportLoadId;
     }
 
-	public function start($elementName)
+	public function start(\PDO $pdo, $elementName)
 	{
+        $this->db = DriverManager::getConnection(['pdo' => $pdo]);
+
 		$this->ensureSchema();
 
 		try {
@@ -98,9 +99,11 @@ class MetaLogger
 		}
 	}
 
-	public function stop($elementName, $recordCount, $errorRecordCount, int $errored = 0, ?string $exception = null)
+	public function stop(\PDO $pdo, $elementName, $recordCount, $errorRecordCount, int $errored = 0, ?string $exception = null)
 	{
 		try {
+            $db = DriverManager::getConnection(['pdo' => $pdo]);
+
 		    $endTime = (new \DateTime())->format($this->dateFormat);
 
 		    // local file report
@@ -114,7 +117,7 @@ class MetaLogger
                 'error_exception' => $exception
             ];
 
-		    $this->db
+		    $db
                 ->createQueryBuilder()
                 ->update($this->tableName)
                 ->set('finished_at', '?')
