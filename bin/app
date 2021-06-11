@@ -4,7 +4,7 @@ require __DIR__.'/../vendor/autoload.php';
 
 use Symfony\Component\Console\Application;
 
-$application = new Application('compose-transpiler');
+$application = new Application('mongo2mysql');
 $command = new \Graviton\Mongo2Mysql\Command\ImportCommand();
 $application->add($command);
 $application->setDefaultCommand($command->getName(), true);
