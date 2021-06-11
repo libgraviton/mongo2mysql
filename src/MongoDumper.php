@@ -154,7 +154,15 @@ class MongoDumper {
      */
     private $writeFieldNames = false;
 
+    /**
+     * @var string
+     */
     private $nullValue = 'NULL';
+
+    /**
+     * @var bool
+     */
+    private $skipTooLongFields = true;
 
     /**
      * MongoDumper constructor.
@@ -243,6 +251,17 @@ class MongoDumper {
     }
 
     /**
+     * set SkipTooLongFields
+     *
+     * @param bool $skipTooLongFields skipTooLongFields
+     *
+     * @return void
+     */
+    public function setSkipTooLongFields($skipTooLongFields) {
+        $this->skipTooLongFields = $skipTooLongFields;
+    }
+
+    /**
      * dumps mongo stuff into a file
      *
      * @return DumpResult result
@@ -264,16 +283,18 @@ class MongoDumper {
         $this->logger->info('Collected field count', ['count' => count($this->fields)]);
 
         // check for long fieldnames and drop them
-        $this->fields = array_filter(
-            $this->fields,
-            function ($name) {
-                if (strlen($name) > $this->maxMysqlFieldLength) {
-                    $this->logger->warning('Dropped field, field name too long for mysql', ['fieldName' => $name]);
-                    return false;
+        if ($this->skipTooLongFields) {
+            $this->fields = array_filter(
+                $this->fields,
+                function ($name) {
+                    if (strlen($name) > $this->maxMysqlFieldLength) {
+                        $this->logger->warning('Dropped field, field name too long for mysql', ['fieldName' => $name]);
+                        return false;
+                    }
+                    return true;
                 }
-                return true;
-            }
-        );
+            );
+        }
 
         $dumpResult->setFields($this->fields);
         $dumpResult->setFieldTypes($this->fieldTypes);
