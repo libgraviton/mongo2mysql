@@ -145,6 +145,18 @@ class MongoDumper {
     private $pipelineFile;
 
     /**
+     * @var string
+     */
+    private $outputFile;
+
+    /**
+     * @var bool
+     */
+    private $writeFieldNames = false;
+
+    private $nullValue = 'NULL';
+
+    /**
      * MongoDumper constructor.
      *
      * @param Logger $logger         logger
@@ -198,11 +210,44 @@ class MongoDumper {
     }
 
     /**
+     * set OutputFile
+     *
+     * @param string $outputFile outputFile
+     *
+     * @return void
+     */
+    public function setOutputFile($outputFile) {
+        $this->outputFile = $outputFile;
+    }
+
+    /**
+     * set WriteFieldNames
+     *
+     * @param bool $writeFieldNames writeFieldNames
+     *
+     * @return void
+     */
+    public function setWriteFieldNames($writeFieldNames) {
+        $this->writeFieldNames = $writeFieldNames;
+    }
+
+    /**
+     * set NullValue
+     *
+     * @param string $nullValue nullValue
+     *
+     * @return void
+     */
+    public function setNullValue($nullValue) {
+        $this->nullValue = $nullValue;
+    }
+
+    /**
      * dumps mongo stuff into a file
      *
      * @return DumpResult result
      */
-    public function dump()
+    public function dump() : ?DumpResult
     {
         $dumpResult = new DumpResult();
         $dumpResult->setEntityName($this->collectionName);
@@ -236,11 +281,22 @@ class MongoDumper {
         $dumpResult->setFieldNullables($this->fieldNullables);
         $dumpResult->setFieldsPrimary($this->fieldPrimary);
 
+        if (is_null($this->outputFile)) {
+            $tempFile = tempnam($this->tempDir, 'grvmd');
+        } else {
+            $tempFile = $this->outputFile;
+        }
+
         // write into file
-        $tempFile = tempnam($this->tempDir, 'grvmd');
+
         $this->logger->info('Starting writing to CSV File', ['filename' => $tempFile]);
 
         $fp = fopen($tempFile, 'w+');
+
+        // write fieldnames?
+        if ($this->writeFieldNames) {
+            fputcsv($fp, $this->fields);
+        }
 
         $i = 0;
         foreach ($this->getMongoIterator($this->getSelectFilter()) as $record) {
@@ -257,7 +313,7 @@ class MongoDumper {
                 if (isset($flatRecord[$fieldValueSelector]) && !is_null($flatRecord[$fieldValueSelector])) {
                     $thisRecord[] = $this->convertValue($flatRecord[$fieldValueSelector]);
                 } else {
-                    $thisRecord[] = 'NULL';
+                    $thisRecord[] = $this->nullValue;
                 }
             }
 
