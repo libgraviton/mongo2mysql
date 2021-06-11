@@ -2,6 +2,7 @@
 
 namespace Graviton\Mongo2Mysql\Util;
 use Monolog\Formatter\LineFormatter;
+use Psr\Log\LoggerInterface;
 use Symfony\Bridge\Monolog\Handler\ConsoleHandler;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -18,10 +19,10 @@ class Logger
      * @param $name
      * @return \Monolog\Logger
      */
-    public static function getLogger(OutputInterface $output, $name)
+    public static function getLogger(OutputInterface $output, $name) : LoggerInterface
     {
         $format = "[%datetime%] %level_name%: %message% %context%\n";
-		$formatter = new LineFormatter($format, \DateTime::ISO8601);
+		$formatter = new LineFormatter($format, \DateTimeInterface::ISO8601);
 		$handler = new ConsoleHandler($output);
 		$handler->setFormatter($formatter);
 

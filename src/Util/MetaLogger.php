@@ -5,6 +5,7 @@ namespace Graviton\Mongo2Mysql\Util;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Types\Types;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
@@ -16,7 +17,7 @@ class MetaLogger
 {
 
 	/**
-	 * @var Logger
+	 * @var LoggerInterface
 	 */
 	private $logger;
 
@@ -38,7 +39,7 @@ class MetaLogger
 
 	private $reportLoadId;
 
-	public function __construct(\Monolog\Logger $logger) {
+	public function __construct(LoggerInterface $logger) {
 		$this->logger = $logger;
 		$this->fs = new Filesystem();
 	}

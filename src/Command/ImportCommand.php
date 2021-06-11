@@ -8,6 +8,7 @@ use Graviton\Mongo2Mysql\PdoImporter;
 use Graviton\Mongo2Mysql\MongoDumper;
 use Graviton\Mongo2Mysql\Util\Logger;
 use Graviton\Mongo2Mysql\Util\MetaLogger;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
@@ -162,29 +163,19 @@ class ImportCommand extends Command
         $metaLogger->start($this->getPdo($input), $entityName);
 
         try {
-            $dumper = new MongoDumper(
+
+            $dumpResult = $this->mongoDump(
                 $logger,
                 $input->getArgument('sourceMongoDsn'),
                 $input->getArgument('sourceMongoDb'),
                 $input->getArgument('sourceMongoCollection'),
                 $input->getOption('tempDir'),
-                $input->getOption('mongoFilter')
+                $input->getOption('mongoFilter'),
+                $input->getOption('tz'),
+                $input->getOption('schemaSampleSize'),
+                $input->getOption('sourceMongoPipelineFile')
             );
-            $dumper->setTimezone($input->getOption('tz'));
-            $dumper->setSchemaSampleSize(intval($input->getOption('schemaSampleSize')));
 
-            // pipeline file?
-            if (!is_null($input->getOption('sourceMongoPipelineFile'))) {
-                $pipelineFile = $input->getOption('sourceMongoPipelineFile');
-
-                if (!(new Filesystem())->exists($pipelineFile)) {
-                    throw new \LogicException('File ' . $pipelineFile . ' does not exist!');
-                }
-
-                $dumper->setPipelineFile($pipelineFile);
-            }
-
-            $dumpResult = $dumper->dump();
             $dumpResult->setEntityName($entityName);
 
             $importer = new PdoImporter(
@@ -200,6 +191,52 @@ class ImportCommand extends Command
         }
 
         return 0;
+    }
+
+    protected function mongoDump(
+        LoggerInterface $logger,
+        $sourceDsn,
+        $sourceDb,
+        $sourceMongoCollection,
+        $outDir,
+        $mongoFilter,
+        $timezone,
+        $sampleSchemaSize,
+        $sourceMongoPipelineFile,
+        $outputFileName = null,
+        $writeFieldNames = false,
+        $nullValue = null
+    ) {
+        $dumper = new MongoDumper(
+            $logger,
+            $sourceDsn,
+            $sourceDb,
+            $sourceMongoCollection,
+            $outDir,
+            $mongoFilter
+        );
+        $dumper->setTimezone($timezone);
+        $dumper->setSchemaSampleSize(intval($sampleSchemaSize));
+
+        // pipeline file?
+        if (!is_null($sourceMongoPipelineFile)) {
+            $pipelineFile = $sourceMongoPipelineFile;
+
+            if (!(new Filesystem())->exists($pipelineFile)) {
+                throw new \LogicException('File ' . $pipelineFile . ' does not exist!');
+            }
+
+            $dumper->setPipelineFile($pipelineFile);
+        }
+
+        $dumper->setOutputFile($outputFileName);
+        $dumper->setWriteFieldNames($writeFieldNames);
+
+        if (!is_null($nullValue)) {
+            $dumper->setNullValue($nullValue);
+        }
+
+        return $dumper->dump();
     }
 
     private function getPdo(InputInterface $input) {
