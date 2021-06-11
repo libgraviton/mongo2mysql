@@ -128,7 +128,8 @@ class CsvExportCommand extends ImportCommand
             $input->getOption('sourceMongoPipelineFile'),
             $input->getOption('file'),
             true,
-            '' // set empty string as value for null
+            '', // set empty string as value for null
+            false
         );
 
         return 0;

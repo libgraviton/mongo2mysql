@@ -205,7 +205,8 @@ class ImportCommand extends Command
         $sourceMongoPipelineFile,
         $outputFileName = null,
         $writeFieldNames = false,
-        $nullValue = null
+        $nullValue = null,
+        $skipTooLongFields = true
     ) {
         $dumper = new MongoDumper(
             $logger,
@@ -235,6 +236,8 @@ class ImportCommand extends Command
         if (!is_null($nullValue)) {
             $dumper->setNullValue($nullValue);
         }
+
+        $dumper->setSkipTooLongFields($skipTooLongFields);
 
         return $dumper->dump();
     }
