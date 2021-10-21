@@ -150,7 +150,7 @@ class PdoImporter {
             $this->pdo->query($query);
         }
 
-        $table->addOption('engine', 'InnoDB');
+        //$table->addOption('engine', 'InnoDB');
 
         $this->logger->info('Created table as derived from schema', ['tableName' => $dumpResult->getEntityName()]);
     }
