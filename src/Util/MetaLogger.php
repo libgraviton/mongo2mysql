@@ -3,7 +3,8 @@
 namespace Graviton\Mongo2Mysql\Util;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Schema\Comparator;
+use Doctrine\DBAL\Schema\Schema;
 use Doctrine\DBAL\Types\Types;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Filesystem\Filesystem;
@@ -55,10 +56,9 @@ class MetaLogger
         $this->reportLoadId = $reportLoadId;
     }
 
-	public function start(\PDO $pdo, $elementName)
+	public function start(Connection $db, $elementName)
 	{
-        $this->db = DriverManager::getConnection(['pdo' => $pdo]);
-
+        $this->db = $db;
 		$this->ensureSchema();
 
 		try {
@@ -81,14 +81,14 @@ class MetaLogger
                 ])
                 ->setParameters(array_values($insertData));
 
-		    $sql->execute();
+            $sql->executeStatement();
 
 		    $sql = $this->db
                 ->createQueryBuilder()
                 ->select(['max(id)'])
-                ->from($this->tableName)
-                ->execute();
-		    $row = $sql->fetchNumeric();
+                ->from($this->tableName);
+
+            $row = $sql->fetchFirstColumn();
 
 			if (isset($row[0])) {
 				$this->recordId = $row[0];
@@ -100,11 +100,9 @@ class MetaLogger
 		}
 	}
 
-	public function stop(\PDO $pdo, $elementName, $recordCount, $errorRecordCount, int $errored = 0, ?string $exception = null)
+	public function stop(Connection $db, $elementName, $recordCount, $errorRecordCount, int $errored = 0, ?string $exception = null)
 	{
 		try {
-            $db = DriverManager::getConnection(['pdo' => $pdo]);
-
 		    $endTime = (new \DateTime())->format($this->dateFormat);
 
 		    // local file report
@@ -133,7 +131,7 @@ class MetaLogger
                         [$this->recordId]
                     )
                 )
-                ->execute();
+                ->executeStatement();
 
             $this->logger->info('Updated metadata entry.', ['data' => $updateData, 'recordId' => $this->recordId]);
 		} catch (\Exception $e) {
@@ -144,48 +142,40 @@ class MetaLogger
 	private function ensureSchema()
 	{
 		try {
-		    $schemaManager = $this->db->getSchemaManager();
-		    $schema = $schemaManager->createSchema();
-		    $newSchema = clone $schema;
 
-		    if ($newSchema->hasTable($this->tableName)) {
-		        $table = $newSchema->getTable($this->tableName);
-            } else {
-		        $table = $newSchema->createTable($this->tableName);
-            }
+            $schema = new Schema();
+            $table = $schema->createTable($this->tableName);
 
-		    if (!$table->hasColumn('id')) {
-		        $col = $table->addColumn('id', Types::INTEGER);
-                $col->setAutoincrement(true);
-                $table->setPrimaryKey(['id']);
-            }
+            $col = $table->addColumn('id', Types::INTEGER);
+            $col->setAutoincrement(true);
+            $table->setPrimaryKey(['id']);
 
-            if (!$table->hasColumn('element_name')) {
-                $table->addColumn('element_name', Types::STRING);
-            }
-            if (!$table->hasColumn('started_at')) {
-                $table->addColumn('started_at', Types::DATETIME_MUTABLE);
-            }
-            if (!$table->hasColumn('finished_at')) {
-                $table->addColumn('finished_at', Types::DATETIME_MUTABLE)->setNotnull(false);
-            }
-            if (!$table->hasColumn('record_count')) {
-                $table->addColumn('record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
-            }
-            if (!$table->hasColumn('error_record_count')) {
-                $table->addColumn('error_record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
-            }
-            if (!$table->hasColumn('errored')) {
-                $table->addColumn('errored', Types::BOOLEAN)->setDefault(false);
-            }
-            if (!$table->hasColumn('error_exception')) {
-                $table->addColumn('error_exception', Types::STRING)->setNotnull(false);
+            $table->addColumn('element_name', Types::STRING);
+            $table->addColumn('started_at', Types::DATETIME_MUTABLE);
+            $table->addColumn('finished_at', Types::DATETIME_MUTABLE)->setNotnull(false);
+            $table->addColumn('record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
+            $table->addColumn('error_record_count', Types::INTEGER)->setDefault(0)->setNotnull(false);
+            $table->addColumn('errored', Types::BOOLEAN)->setDefault(false);
+            $table->addColumn('error_exception', Types::STRING)->setNotnull(false);
+            $table->addOption('engine', 'Aria');
+
+            $currentSchema = $this->db->createSchemaManager()->createSchema();
+            foreach ($currentSchema->getTables() as $existingTable) {
+                if ($existingTable->getName() != $this->tableName) {
+                    $currentSchema->dropTable($existingTable->getName());
+                }
             }
 
-            $migrations = $schema->getMigrateToSql($newSchema, $schemaManager->getDatabasePlatform());
-            foreach ($migrations as $migration) {
-                $this->db->executeStatement($migration);
+            $comparator = new Comparator();
+            $schemaDiff = $comparator->compareSchemas($currentSchema, $schema);
+
+            $queries = $schemaDiff->toSql($this->db->getDatabasePlatform()); // queries to get from one to another schema.
+
+            foreach ($queries as $query) {
+                $this->logger->info('Migrating meta table', ['sql' => $query]);
+                $this->db->executeStatement($query);
             }
+
 		} catch (\Exception $e) {
 		    $message = $e->getMessage();
 		    if (strpos($message, 'already exists') == false) {

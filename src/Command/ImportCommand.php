@@ -6,6 +6,7 @@ namespace Graviton\Mongo2Mysql\Command;
 
 use Graviton\Mongo2Mysql\PdoImporter;
 use Graviton\Mongo2Mysql\MongoDumper;
+use Graviton\Mongo2Mysql\Util\DbUtil;
 use Graviton\Mongo2Mysql\Util\Logger;
 use Graviton\Mongo2Mysql\Util\MetaLogger;
 use Psr\Log\LoggerInterface;
@@ -160,7 +161,7 @@ class ImportCommand extends Command
         }
 
         // start entity...
-        $metaLogger->start($this->getPdo($input), $entityName);
+        $metaLogger->start(DbUtil::getConnection($input), $entityName);
 
         try {
 
@@ -180,13 +181,13 @@ class ImportCommand extends Command
 
             $importer = new PdoImporter(
                 $logger,
-                $this->getPdo($input)
+                DbUtil::getConnection($input)
             );
             $importResult = $importer->import($dumpResult);
 
-            $metaLogger->stop($this->getPdo($input), $entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
+            $metaLogger->stop(DbUtil::getConnection($input), $entityName, $importResult->getInsertCounter(), $importResult->getInsertCounterError());
         } catch (\Exception $e) {
-            $metaLogger->stop($this->getPdo($input), $entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
+            $metaLogger->stop(DbUtil::getConnection($input), $entityName, 0, 0, 1, get_class($e).': '.$e->getMessage());
             $logger->critical('Exception happened during execution', ['e' => $e]);
         }
 
@@ -240,17 +241,5 @@ class ImportCommand extends Command
         $dumper->setSkipTooLongFields($skipTooLongFields);
 
         return $dumper->dump();
-    }
-
-    private function getPdo(InputInterface $input) {
-        return new \PDO(
-            $input->getArgument('targetMysqlDsn'),
-            $input->getArgument('targetMysqlUser'),
-            $input->getArgument('targetMysqlPassword'),
-            [
-                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                \PDO::MYSQL_ATTR_LOCAL_INFILE => true
-            ]
-        );
     }
 }

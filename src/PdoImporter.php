@@ -1,7 +1,7 @@
 <?php
 namespace Graviton\Mongo2Mysql;
 
-use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Schema\Schema;
 use Graviton\Mongo2Mysql\Model\DumpResult;
 use Graviton\Mongo2Mysql\Model\ImportResult;
@@ -20,11 +20,6 @@ class PdoImporter {
      */
     private $logger;
 
-    /**
-     * @var \PDO
-     */
-    private $pdo;
-
 	/**
 	 * @var Connection
 	 */
@@ -38,10 +33,10 @@ class PdoImporter {
     private $insertCounter = 0;
 	private $insertCounterError = 0;
 
-    public function __construct(Logger $logger, \PDO $pdo)
+    public function __construct(Logger $logger, Connection $connection)
     {
         $this->logger = $logger;
-        $this->pdo = $pdo;
+        $this->connection = $connection;
         $this->fs = new Filesystem();
     }
 
@@ -52,8 +47,6 @@ class PdoImporter {
      */
     public function import(DumpResult $dumpResult) : ImportResult
     {
-        $this->connection = DriverManager::getConnection(['pdo' => $this->pdo]);
-
         $this->insertCounter = 0;
         $this->insertCounterError = 0;
 
@@ -87,8 +80,7 @@ class PdoImporter {
 
     private function createTableSchema(DumpResult $dumpResult)
     {
-        $connection = DriverManager::getConnection(['pdo' => $this->pdo]);
-        $schemaManager = $connection->getSchemaManager();
+        $schemaManager = $this->connection->createSchemaManager();
 
         // drop if exists
         if ($schemaManager->createSchema()->hasTable($dumpResult->getEntityName())) {
@@ -145,20 +137,23 @@ class PdoImporter {
             }
         }
 
+        $table->addOption('engine', 'Aria');
+
+        $createSql = $schema->toSql($schemaManager->getDatabasePlatform());
+
         // migrate to this schema
-        foreach ($schema->toSql($schemaManager->getDatabasePlatform()) as $query) {
-            $this->pdo->query($query);
+        foreach ($createSql as $query) {
+            $this->connection->executeStatement($query);
         }
 
-        //$table->addOption('engine', 'InnoDB');
-
-        $this->logger->info('Created table as derived from schema', ['tableName' => $dumpResult->getEntityName()]);
+        $this->logger->info('Created table as derived from schema', ['tableName' => $dumpResult->getEntityName(), 'sql' => $createSql]);
     }
 
     private function insertDataLoadDataInfile(DumpResult $dumpResult) {
+
         $query = 'LOAD DATA LOCAL INFILE ';
-        $query .= $this->pdo->quote($dumpResult->getDumpFile(), \PDO::PARAM_STMT);
-        $query .= ' INTO TABLE `'.$dumpResult->getEntityName().'` ';
+        $query .= $this->connection->quote($dumpResult->getDumpFile());
+        $query .= ' INTO TABLE '.$this->connection->quoteIdentifier($dumpResult->getEntityName());
         $query .= ' CHARACTER SET utf8 ';
         $query .= ' FIELDS TERMINATED BY \',\' ';
         $query .= ' ENCLOSED BY \'"\' ';
@@ -167,12 +162,10 @@ class PdoImporter {
         $this->logger->info('LOAD DATA INFILE capable target recognized, using that method..');
         $this->logger->info('Starting import query', ['query' => $query]);
 
-        $res = $this->pdo->query($query);
-
-        if ($res == false) {
-            throw new \RuntimeException('Was unable to do LOAD DATA LOCAL INFILE');
+        try {
+            $this->insertCounter = $this->connection->executeStatement($query);
+        } catch (\Exception $e) {
+            throw new \RuntimeException('Was unable to do LOAD DATA LOCAL INFILE', 2, $e);
         }
-
-        $this->insertCounter = $res->rowCount();
     }
 }
