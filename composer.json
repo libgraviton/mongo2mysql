@@ -3,13 +3,15 @@
     "description": "Script that transport MongoDB collections to MySQL/MariaDB tables",
     "type": "project",
     "require": {
-        "php": ">=7.4.0",
+        "php": ">=8.0.0",
         "mongodb/mongodb": "~1",
         "symfony/console": "~5",
         "symfony/filesystem": "~5",
         "symfony/monolog-bridge": "~5",
         "monolog/monolog": "~2",
-        "doctrine/dbal": "^2.9"
+        "doctrine/dbal": "~3",
+        "league/uri": "^6.5",
+        "league/uri-components": "^2.4"
     },
     "license": "MIT",
     "autoload": {
